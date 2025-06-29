@@ -1,0 +1,38 @@
+{
+    "type": "DATA_ACCESS_REQUEST",
+    "payload": {
+        "asset_details": {
+            "guid": "b178a72f-e1a5-4326-a1ac-f6b091b4d4dd",
+            "name": "INSTACART_CUSTOMER_DETAILS",
+            "qualified_name": "default/snowflake/1663703816/DBT_FOOD_BEVERAGE/POSTGRES_RDS_DEMO/INSTACART_CUSTOMER_DETAILS",
+            "url": "https://snowflake-partner.atlan.com/assets/b178a72f-e1a5-4326-a1ac-f6b091b4d4dd/overview",
+            "type_name": "Table",
+            "connector_name": "snowflake",
+            "database_name": "DBT_FOOD_BEVERAGE",
+            "schema_name": "POSTGRES_RDS_DEMO"
+        },
+        "request_timestamp": "2025-06-27T19:58:53Z",
+        "approval_details": {
+            "is_auto_approved": false,
+            "approvers": [
+                {
+                    "name": "gene.arnold",
+                    "comment": "You got it!",
+                    "approved_at": "2025-06-27T19:59:58Z",
+                    "email": "gene.arnold@atlan.com"
+                }
+            ]
+        },
+        "requestor": "gene.arnold",
+        "requestor_email": "gene.arnold@atlan.com",
+        "requestor_comment": "",
+        "forms": [
+            {
+                "form_title": "Data Access Request",
+                "response": {
+                    "Dataset": "Dataset please"
+                }
+            }
+        ]
+    }
+}
