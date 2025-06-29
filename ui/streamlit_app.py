@@ -41,7 +41,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def load_webhook_data():
-    """Load webhook data from the JSON file"""
+    """Load webhook data from the API or local file"""
+    # Try API first (for production)
+    api_url = os.getenv("API_URL", "http://localhost:8080")
+    
+    try:
+        import requests
+        response = requests.get(f"{api_url}/webhooks", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("webhooks", [])
+    except Exception as e:
+        print(f"Failed to load from API: {e}")
+    
+    # Fallback to local file (for local development)
     webhook_file = "../data/webhooks.json"
     if os.path.exists(webhook_file):
         try:

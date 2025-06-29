@@ -19,8 +19,10 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "f3a225c-f1db-430d-8a73-818a9133df9
 REQUIRE_SIGNATURE = os.getenv("REQUIRE_SIGNATURE", "True").lower() == "true"
 
 # Create data directory if it doesn't exist
-os.makedirs("../data", exist_ok=True)
-WEBHOOK_FILE = "../data/webhooks.json"
+# Use relative path that works both locally and in production
+data_dir = os.getenv("DATA_DIR", "./data")
+os.makedirs(data_dir, exist_ok=True)
+WEBHOOK_FILE = os.path.join(data_dir, "webhooks.json")
 
 class AssetDetails(BaseModel):
     guid: str
@@ -231,4 +233,5 @@ async def get_config():
     }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080) 
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port) 
