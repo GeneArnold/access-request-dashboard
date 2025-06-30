@@ -43,7 +43,7 @@ st.markdown("""
 def load_webhook_data():
     """Load webhook data from the API or local file"""
     # Try API first (for production)
-    api_url = os.getenv("API_URL", "http://localhost:8080")
+    api_url = os.getenv("API_URL", "https://access-request-api.onrender.com")
     
     try:
         import requests
