@@ -138,10 +138,28 @@ async def receive_webhook(
 ):
     """Receive webhook data and store it with signature verification"""
     try:
-        # Get raw body for signature verification
+        # Get raw body 
         raw_body = await request.body()
         
-        # Check signature if required
+        # Parse JSON first to check for validation challenges
+        try:
+            json_data = json.loads(raw_body.decode('utf-8'))
+            
+            # Check if this is a validation challenge BEFORE signature verification
+            if isinstance(json_data, dict):
+                if "challenge" in json_data:
+                    return {"challenge": json_data["challenge"]}
+                elif "verification_token" in json_data:
+                    return {"verification_token": json_data["verification_token"]}
+                elif "token" in json_data:
+                    return {"token": json_data["token"]}
+                elif "key" in json_data:
+                    return {"key": json_data["key"]}
+        except json.JSONDecodeError:
+            # If not JSON, might be validation challenge - allow it through
+            return {"status": "success", "message": "Validation successful"}
+        
+        # Now check signature for non-validation requests
         used_secret = None
         if REQUIRE_SIGNATURE:
             # Try different signature header formats
@@ -160,36 +178,16 @@ async def receive_webhook(
                     detail="Invalid webhook signature - signature does not match any configured secrets"
                 )
         
-        # Parse JSON data
+        # Try to parse as webhook data
         try:
-            json_data = json.loads(raw_body.decode('utf-8'))
-            
-            # Check if this is a validation challenge
-            if isinstance(json_data, dict):
-                if "challenge" in json_data:
-                    return {"challenge": json_data["challenge"]}
-                elif "verification_token" in json_data:
-                    return {"verification_token": json_data["verification_token"]}
-                elif "token" in json_data:
-                    return {"token": json_data["token"]}
-                elif "key" in json_data:
-                    return {"key": json_data["key"]}
-            
-            # Try to parse as webhook data
             data = WebhookData(**json_data)
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
         except ValueError as e:
-            # If not valid webhook data, check if it might be validation
-            try:
-                json_data = json.loads(raw_body.decode('utf-8'))
-                return {
-                    "status": "success", 
-                    "message": "Validation successful",
-                    "received_data": json_data
-                }
-            except:
-                raise HTTPException(status_code=400, detail=f"Invalid webhook data format: {str(e)}")
+            # If not valid webhook data, might be validation challenge
+            return {
+                "status": "success", 
+                "message": "Validation successful",
+                "received_data": json_data
+            }
         
         # Convert to dict for storage
         webhook_dict = data.model_dump()
