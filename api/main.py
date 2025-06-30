@@ -134,7 +134,8 @@ async def receive_webhook(
     request: Request,
     x_signature_256: Optional[str] = Header(None, alias="X-Signature-256"),
     x_hub_signature_256: Optional[str] = Header(None, alias="X-Hub-Signature-256"),
-    x_signature: Optional[str] = Header(None, alias="X-Signature")
+    x_signature: Optional[str] = Header(None, alias="X-Signature"),
+    secret_key: Optional[str] = Header(None, alias="secret-key")
 ):
     """Receive webhook data and store it with signature verification"""
     try:
@@ -172,21 +173,31 @@ async def receive_webhook(
         # Now check signature for non-validation requests
         used_secret = None
         if REQUIRE_SIGNATURE:
-            # Try different signature header formats
-            signature = x_signature_256 or x_hub_signature_256 or x_signature
-            
-            if not signature:
-                raise HTTPException(
-                    status_code=401, 
-                    detail="Missing signature header. Expected X-Signature-256, X-Hub-Signature-256, or X-Signature"
-                )
-            
-            is_valid, used_secret = verify_webhook_signature(raw_body, signature, WEBHOOK_SECRETS)
-            if not is_valid:
-                raise HTTPException(
-                    status_code=401, 
-                    detail="Invalid webhook signature - signature does not match any configured secrets"
-                )
+            # First try secret-key header (Atlan's method)
+            if secret_key:
+                if secret_key in WEBHOOK_SECRETS:
+                    used_secret = secret_key
+                else:
+                    raise HTTPException(
+                        status_code=401, 
+                        detail="Invalid secret key - key does not match any configured secrets"
+                    )
+            else:
+                # Fall back to HMAC signature verification
+                signature = x_signature_256 or x_hub_signature_256 or x_signature
+                
+                if not signature:
+                    raise HTTPException(
+                        status_code=401, 
+                        detail="Missing authentication. Expected secret-key header or signature header (X-Signature-256, X-Hub-Signature-256, or X-Signature)"
+                    )
+                
+                is_valid, used_secret = verify_webhook_signature(raw_body, signature, WEBHOOK_SECRETS)
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=401, 
+                        detail="Invalid webhook signature - signature does not match any configured secrets"
+                    )
         
         # Try to parse as webhook data
         try:
