@@ -14,8 +14,9 @@ load_dotenv()
 
 app = FastAPI(title="Webhook Receiver", description="Receives and stores webhook data")
 
-# Configuration
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "f3a225c-f1db-430d-8a73-818a9133df92")  # Your Atlan secret key
+# Configuration - Support multiple secrets for multi-tenant deployments
+WEBHOOK_SECRETS_RAW = os.getenv("WEBHOOK_SECRET", "f3a225c-f1db-430d-8a73-818a9133df92")
+WEBHOOK_SECRETS = [secret.strip() for secret in WEBHOOK_SECRETS_RAW.split(",") if secret.strip()]
 REQUIRE_SIGNATURE = os.getenv("REQUIRE_SIGNATURE", "True").lower() == "true"
 
 # Create data directory if it doesn't exist
@@ -83,40 +84,46 @@ def save_webhook(webhook_data: dict):
     with open(WEBHOOK_FILE, 'w') as f:
         json.dump(webhooks, f, indent=2)
 
-def verify_webhook_signature(body: bytes, signature: str, secret: str) -> bool:
+def verify_webhook_signature(body: bytes, signature: str, secrets: List[str]) -> tuple[bool, Optional[str]]:
     """
-    Verify webhook signature from Atlan
+    Verify webhook signature against multiple possible secrets
     
     Args:
         body: Raw request body as bytes
         signature: Signature from the request header
-        secret: Your webhook secret key
+        secrets: List of possible webhook secret keys
     
     Returns:
-        bool: True if signature is valid
+        tuple: (is_valid: bool, matched_secret: Optional[str])
     """
-    if not signature:
-        return False
+    if not signature or not secrets:
+        return False, None
     
-    try:
-        # Remove 'sha256=' prefix if present
-        if signature.startswith('sha256='):
-            signature = signature[7:]
-        elif signature.startswith('sha1='):
-            signature = signature[5:]
-        
-        # Calculate expected signature
-        expected = hmac.new(
-            secret.encode('utf-8'),
-            body,
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Use hmac.compare_digest for secure comparison
-        return hmac.compare_digest(signature, expected)
-    except Exception as e:
-        print(f"Signature verification error: {e}")
-        return False
+    # Remove 'sha256=' prefix if present
+    clean_signature = signature
+    if signature.startswith('sha256='):
+        clean_signature = signature[7:]
+    elif signature.startswith('sha1='):
+        clean_signature = signature[5:]
+    
+    # Try each secret
+    for secret in secrets:
+        try:
+            # Calculate expected signature
+            expected = hmac.new(
+                secret.encode('utf-8'),
+                body,
+                hashlib.sha256
+            ).hexdigest()
+            
+            # Use hmac.compare_digest for secure comparison
+            if hmac.compare_digest(clean_signature, expected):
+                return True, secret
+        except Exception as e:
+            print(f"Signature verification error with secret {secret[:8]}...: {e}")
+            continue
+    
+    return False, None
 
 @app.get("/")
 async def root():
@@ -135,6 +142,7 @@ async def receive_webhook(
         raw_body = await request.body()
         
         # Check signature if required
+        used_secret = None
         if REQUIRE_SIGNATURE:
             # Try different signature header formats
             signature = x_signature_256 or x_hub_signature_256 or x_signature
@@ -145,10 +153,11 @@ async def receive_webhook(
                     detail="Missing signature header. Expected X-Signature-256, X-Hub-Signature-256, or X-Signature"
                 )
             
-            if not verify_webhook_signature(raw_body, signature, WEBHOOK_SECRET):
+            is_valid, used_secret = verify_webhook_signature(raw_body, signature, WEBHOOK_SECRETS)
+            if not is_valid:
                 raise HTTPException(
                     status_code=401, 
-                    detail="Invalid webhook signature"
+                    detail="Invalid webhook signature - signature does not match any configured secrets"
                 )
         
         # Parse JSON data
@@ -185,6 +194,7 @@ async def receive_webhook(
         # Convert to dict for storage
         webhook_dict = data.model_dump()
         webhook_dict['signature_verified'] = REQUIRE_SIGNATURE  # Track if signature was verified
+        webhook_dict['verified_with_secret'] = used_secret[:8] + "..." if used_secret else None  # Track which secret was used (partial for security)
         
         # Save to file
         save_webhook(webhook_dict)
@@ -194,7 +204,8 @@ async def receive_webhook(
             "message": "Webhook received and stored",
             "type": data.type,
             "asset_name": data.payload.asset_details.name,
-            "signature_verified": REQUIRE_SIGNATURE
+            "signature_verified": REQUIRE_SIGNATURE,
+            "verified_with_secret": used_secret[:8] + "..." if used_secret else None
         }
     except HTTPException:
         raise  # Re-raise HTTP exceptions
@@ -303,9 +314,10 @@ async def get_config():
     """Get current webhook configuration"""
     return {
         "signature_verification_enabled": REQUIRE_SIGNATURE,
-        "secret_key_configured": bool(WEBHOOK_SECRET),
-        "secret_key_preview": WEBHOOK_SECRET[:8] + "..." if WEBHOOK_SECRET else None,
-        "webhook_file": WEBHOOK_FILE
+        "secrets_configured": len(WEBHOOK_SECRETS),
+        "secret_previews": [secret[:8] + "..." for secret in WEBHOOK_SECRETS] if WEBHOOK_SECRETS else [],
+        "webhook_file": WEBHOOK_FILE,
+        "multi_tenant_support": len(WEBHOOK_SECRETS) > 1
     }
 
 if __name__ == "__main__":
