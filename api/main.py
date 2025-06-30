@@ -127,7 +127,7 @@ def verify_webhook_signature(body: bytes, signature: str, secrets: List[str]) ->
 
 @app.get("/")
 async def root():
-    return {"message": "Webhook Receiver API is running!", "endpoints": ["/webhook", "/webhooks", "/docs"]}
+    return {"message": "Webhook Receiver API is running!", "endpoints": ["/webhook", "/webhooks", "/config", "/docs"]}
 
 @app.post("/webhook")
 async def receive_webhook(
@@ -241,81 +241,9 @@ async def clear_webhooks():
         os.remove(WEBHOOK_FILE)
     return {"message": "All webhooks cleared"}
 
-@app.get("/webhook/test")
-async def validate_webhook_get(
-    challenge: Optional[str] = None,
-    token: Optional[str] = None,
-    key: Optional[str] = None,
-    verification_token: Optional[str] = None
-):
-    """Handle GET validation challenges"""
-    if challenge:
-        return {"challenge": challenge}
-    elif token:
-        return {"token": token}
-    elif key:
-        return {"key": key}
-    elif verification_token:
-        return {"verification_token": verification_token}
-    else:
-        return {"status": "success", "message": "Webhook validation endpoint ready"}
 
-@app.post("/webhook/test")
-async def receive_test_webhook(request: Request):
-    """Test endpoint that handles both validation challenges and actual webhooks"""
-    try:
-        # Get raw body
-        raw_body = await request.body()
-        
-        # Try to parse as JSON
-        try:
-            json_data = json.loads(raw_body.decode('utf-8'))
-        except json.JSONDecodeError:
-            # If not JSON, treat as validation challenge
-            return {"status": "success", "message": "Validation successful"}
-        
-        # Check if this is a validation challenge (common patterns)
-        if isinstance(json_data, dict):
-            # Look for common validation fields
-            if "challenge" in json_data:
-                return {"challenge": json_data["challenge"]}
-            elif "verification_token" in json_data:
-                return {"verification_token": json_data["verification_token"]}
-            elif "token" in json_data:
-                return {"token": json_data["token"]}
-            elif "key" in json_data:
-                return {"key": json_data["key"]}
-        
-        # Try to parse as full webhook data
-        try:
-            data = WebhookData(**json_data)
-            
-            # Convert to dict for storage
-            webhook_dict = data.model_dump()
-            webhook_dict['signature_verified'] = False  # Mark as test data
-            webhook_dict['test_webhook'] = True
-            
-            # Save to file
-            save_webhook(webhook_dict)
-            
-            return {
-                "status": "success", 
-                "message": "Test webhook received and stored (no signature verification)",
-                "type": data.type,
-                "asset_name": data.payload.asset_details.name,
-                "signature_verified": False
-            }
-        except (ValueError, KeyError):
-            # If not a valid webhook, just return success for validation
-            return {
-                "status": "success", 
-                "message": "Validation successful",
-                "received_data": json_data
-            }
-            
-    except Exception as e:
-        # For any error, still return success for validation
-        return {"status": "success", "message": "Validation successful"}
+
+
 
 @app.get("/config")
 async def get_config():
