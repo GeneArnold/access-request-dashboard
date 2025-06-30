@@ -147,6 +147,7 @@ async def receive_webhook(
             
             # Check if this is a validation challenge BEFORE signature verification
             if isinstance(json_data, dict):
+                # Handle explicit validation fields
                 if "challenge" in json_data:
                     return {"challenge": json_data["challenge"]}
                 elif "verification_token" in json_data:
@@ -155,6 +156,15 @@ async def receive_webhook(
                     return {"token": json_data["token"]}
                 elif "key" in json_data:
                     return {"key": json_data["key"]}
+                # Handle Atlan-specific validation field
+                elif "atlan-webhook" in json_data:
+                    return {"atlan-webhook": json_data["atlan-webhook"]}
+                # Handle empty JSON or very small payloads as validation challenge
+                elif len(json_data) == 0 or (len(json_data) == 1 and any(k in json_data for k in ['test', 'ping', 'validation', 'check'])):
+                    return {"status": "success", "message": "Validation challenge detected", "received_data": json_data}
+                # If payload looks like validation (no required webhook fields), treat as validation
+                elif not all(key in json_data for key in ['type', 'payload']):
+                    return {"status": "success", "message": "Non-webhook payload detected - treating as validation", "received_data": json_data}
         except json.JSONDecodeError:
             # If not JSON, might be validation challenge - allow it through
             return {"status": "success", "message": "Validation successful"}
