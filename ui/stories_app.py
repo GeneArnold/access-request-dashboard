@@ -95,11 +95,7 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
                 "qualified_name": asset_details.get("qualified_name", ""),
                 "url": asset_details.get("url", "#")
             },
-            "form_responses": {
-                "purpose": extract_form_purpose(payload.get("forms", [])),
-                "duration": "As specified in request",
-                "business_justification": payload.get("requestor_comment", "See approval details")
-            },
+            "form_responses": extract_form_responses(payload.get("forms", [])),
             "timestamp": payload.get("request_timestamp", webhook_data.get("timestamp", "")),
             "approval_details": payload.get("approval_details", {}),
             "raw_webhook": webhook_data
@@ -122,11 +118,7 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
                 "qualified_name": "",
                 "url": "#"
             }),
-            "form_responses": webhook_data.get("form_responses", {
-                "purpose": "No purpose specified",
-                "duration": "Unknown",
-                "business_justification": "No justification provided"
-            }),
+            "form_responses": webhook_data.get("form_responses", extract_form_responses(webhook_data.get("forms", []))),
             "timestamp": webhook_data.get("timestamp", ""),
             "approval_details": webhook_data.get("approval_details", {}),
             "raw_webhook": webhook_data
@@ -147,30 +139,53 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "qualified_name": "",
             "url": "#"
         },
-        "form_responses": {
-            "purpose": "Error parsing webhook data",
-            "duration": "Unknown", 
-            "business_justification": "Data parsing error"
-        },
+        "form_responses": {"Error": "Could not parse webhook data"},
         "timestamp": "",
         "approval_details": {},
         "raw_webhook": webhook_data
     }
 
-def extract_form_purpose(forms: List[Dict[str, Any]]) -> str:
-    """Extract purpose from Atlan form responses"""
+def extract_form_responses(forms: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Extract all form responses dynamically from Atlan form data"""
     if not forms:
-        return "Data access request submitted"
+        return {"No form data": "No forms submitted"}
+    
+    all_responses = {}
     
     for form in forms:
+        form_title = form.get("form_title", "Unknown Form")
         response = form.get("response", {})
+        
         if response:
-            # Look for common purpose fields
-            for key in ["purpose", "Purpose", "Dataset", "Reason", "Business Justification"]:
-                if key in response:
-                    return response[key]
+            # Add form title as a prefix for clarity
+            for key, value in response.items():
+                # Handle list values (like ["Red"])
+                if isinstance(value, list):
+                    display_value = ", ".join(str(v) for v in value)
+                else:
+                    display_value = str(value)
+                
+                # Use form title + field name for unique keys
+                field_key = f"{form_title} - {key}" if len(forms) > 1 else key
+                all_responses[field_key] = display_value
+        else:
+            all_responses[f"{form_title}"] = "No response data"
     
-    return "Data access request submitted"
+    return all_responses if all_responses else {"No form responses": "No data available"}
+
+def get_form_summary_for_table(forms: List[Dict[str, Any]]) -> str:
+    """Get a short summary of form responses for table display"""
+    if not forms:
+        return "No form data"
+    
+    responses = extract_form_responses(forms)
+    
+    # Get the first meaningful response for table summary
+    for key, value in responses.items():
+        if value and value != "No data available":
+            return f"{key}: {value}"[:50] + ("..." if len(f"{key}: {value}") > 50 else "")
+    
+    return "Form submitted"
 
 def create_webhooks_table(webhooks: List[Dict[str, Any]]) -> pd.DataFrame:
     """Create a pandas DataFrame for the webhooks table"""
@@ -199,7 +214,7 @@ def create_webhooks_table(webhooks: List[Dict[str, Any]]) -> pd.DataFrame:
             "Asset Name": formatted['asset_details'].get('name', 'Unknown'),
             "Asset Type": formatted['asset_details'].get('type_name', 'Unknown'),
             "Connector": formatted['asset_details'].get('connector_name', 'unknown'),
-            "Purpose": formatted['form_responses'].get('purpose', 'No purpose specified')[:50] + ("..." if len(formatted['form_responses'].get('purpose', '')) > 50 else "")
+            "Purpose": get_form_summary_for_table(webhook.get("payload", {}).get("forms", []))
         })
     
     return pd.DataFrame(table_data)
@@ -295,11 +310,19 @@ Timestamp: {webhook_data['timestamp']}
     
     st.markdown("### 📝 Form Responses")
     form = webhook_data['form_responses']
-    st.code(f"""
-Purpose: {form['purpose']}
-Duration: {form['duration']}
-Business Justification: {form['business_justification']}
-    """)
+    
+    # Dynamic form display - handle any form structure
+    if form:
+        form_text = ""
+        for field_name, field_value in form.items():
+            form_text += f"{field_name}: {field_value}\n"
+        
+        if form_text.strip():
+            st.code(form_text.strip())
+        else:
+            st.code("No form data available")
+    else:
+        st.code("No form responses submitted")
     
     # Show approval details if available (real webhook data)
     if data_source == "real_webhook" and "approval_details" in webhook_data:
