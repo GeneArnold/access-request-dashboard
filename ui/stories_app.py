@@ -173,6 +173,53 @@ def extract_form_responses(forms: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     return all_responses if all_responses else {"No form responses": "No data available"}
 
+def extract_approval_details(approval_details: Dict[str, Any]) -> str:
+    """Extract all approval details dynamically from Atlan approval data"""
+    if not approval_details:
+        return "No approval details available"
+    
+    approval_text = ""
+    
+    # Show auto-approval status
+    is_auto_approved = approval_details.get('is_auto_approved', 'Unknown')
+    approval_text += f"Auto Approved: {is_auto_approved}\n"
+    
+    # Show approvers with all their details
+    approvers = approval_details.get('approvers', [])
+    if approvers:
+        approval_text += f"\nApprovers ({len(approvers)}):\n"
+        for i, approver in enumerate(approvers, 1):
+            approval_text += f"  {i}. {approver.get('name', 'Unknown')}\n"
+            
+            # Show all available approver fields dynamically
+            for key, value in approver.items():
+                if key != 'name':  # Already showed name above
+                    # Format timestamps nicely
+                    if 'at' in key.lower() and isinstance(value, str) and 'T' in value:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                            formatted_value = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+                        except:
+                            formatted_value = value
+                    else:
+                        formatted_value = value
+                    
+                    # Format key names nicely
+                    display_key = key.replace('_', ' ').title()
+                    approval_text += f"     {display_key}: {formatted_value}\n"
+        
+    else:
+        approval_text += "\nNo approvers found"
+    
+    # Show any other top-level approval fields
+    for key, value in approval_details.items():
+        if key not in ['is_auto_approved', 'approvers']:
+            display_key = key.replace('_', ' ').title()
+            approval_text += f"\n{display_key}: {value}"
+    
+    return approval_text.strip()
+
 def get_form_summary_for_table(forms: List[Dict[str, Any]]) -> str:
     """Get a short summary of form responses for table display"""
     if not forms:
@@ -324,15 +371,11 @@ Timestamp: {webhook_data['timestamp']}
     else:
         st.code("No form responses submitted")
     
-    # Show approval details if available (real webhook data)
-    if data_source == "real_webhook" and "approval_details" in webhook_data:
+    # Show approval details if available
+    if "approval_details" in webhook_data and webhook_data["approval_details"]:
         approval = webhook_data["approval_details"]
-        if approval:
-            st.markdown("### ✅ Approval Details")
-            st.code(f"""
-Auto Approved: {approval.get('is_auto_approved', False)}
-Approvers: {', '.join([a.get('name', 'Unknown') for a in approval.get('approvers', [])])}
-            """)
+        st.markdown("### ✅ Approval Details")
+        st.code(extract_approval_details(approval))
     
     st.markdown("### 📄 Complete JSON Payload")
     if data_source == "real_webhook" and "raw_webhook" in webhook_data:
