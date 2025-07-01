@@ -82,7 +82,6 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
         asset_details = payload.get("asset_details", {})
         
         return {
-            "id": f"DA-{webhook_data.get('timestamp', '')[:10]}",
             "source": "atlan_webhook",
             "requestor": payload.get("requestor", "Unknown"),
             "requestor_email": payload.get("requestor_email", "unknown@company.com"),
@@ -105,7 +104,6 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(webhook_data, dict):
         # Ensure we always return a proper structure
         return {
-            "id": webhook_data.get("id", "Unknown"),
             "source": webhook_data.get("source", "unknown"),
             "requestor": webhook_data.get("requestor", "Unknown"),
             "requestor_email": webhook_data.get("requestor_email", "unknown@company.com"),
@@ -126,7 +124,6 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Fallback for unexpected data types
     return {
-        "id": "Unknown",
         "source": "unknown", 
         "requestor": "Unknown",
         "requestor_email": "unknown@company.com",
@@ -349,7 +346,6 @@ URL: {asset.get('url', 'N/A')}
     
     st.markdown("### 👤 Request Information")
     st.code(f"""
-Request ID: {webhook_data.get('id', 'Unknown')}
 Requestor: {webhook_data['requestor']}
 Email: {webhook_data['requestor_email']}
 Timestamp: {webhook_data['timestamp']}
