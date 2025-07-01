@@ -240,13 +240,13 @@ def main():
         # Create table
         df = create_webhooks_table(all_webhooks)
         
-        # Initialize session state for selected row - ensure it's within bounds
-        if 'selected_webhook_index' not in st.session_state:
-            st.session_state.selected_webhook_index = 0  # Default to first row
+        # Initialize session state for selected row - use simple list index
+        if 'selected_row_index' not in st.session_state:
+            st.session_state.selected_row_index = 0  # Default to first row
         
-        # Ensure selected index is within bounds
-        if st.session_state.selected_webhook_index >= len(all_webhooks):
-            st.session_state.selected_webhook_index = 0
+        # Ensure selected index is within bounds of the dataframe
+        if st.session_state.selected_row_index >= len(df):
+            st.session_state.selected_row_index = 0
         
         # Display the table with click functionality
         st.markdown("*Click on any row to view detailed webhook data below*")
@@ -265,16 +265,15 @@ def main():
         for idx, row in df.iterrows():
             row_cols = st.columns([1, 2, 2, 3, 1.5, 1.5, 4])
             
-            # Determine if this row is selected
-            webhook_index = row['Index']
-            is_selected = st.session_state.selected_webhook_index == webhook_index
+            # Use dataframe row index for selection (much simpler)
+            is_selected = st.session_state.selected_row_index == idx
             
             # Style for selected row
             button_type = "primary" if is_selected else "secondary"
             
             with row_cols[0]:
-                if st.button(f"{idx + 1}", key=f"select_{webhook_index}", type=button_type):
-                    st.session_state.selected_webhook_index = webhook_index
+                if st.button(f"{idx + 1}", key=f"select_row_{idx}", type=button_type):
+                    st.session_state.selected_row_index = idx
                     st.rerun()
             
             # Display row data
@@ -287,18 +286,20 @@ def main():
         
         st.markdown("---")
         
-        # Get selected webhook data - with bounds checking
-        if 0 <= st.session_state.selected_webhook_index < len(all_webhooks):
-            selected_webhook = all_webhooks[st.session_state.selected_webhook_index]
-            webhook_data = format_webhook_for_display(selected_webhook)
+        # Get selected webhook data - use the webhook Index from the selected row
+        selected_row = df.iloc[st.session_state.selected_row_index]
+        webhook_index = selected_row['Index']
+        
+        # Ensure webhook_index is within bounds
+        if webhook_index >= len(all_webhooks):
+            webhook_index = 0
             
-            # Show which request is being displayed
-            if total_webhooks > 1:
-                st.info(f"📊 Displaying webhook #{st.session_state.selected_webhook_index + 1} of {total_webhooks}")
-        else:
-            # Fallback if index is out of bounds
-            webhook_data = format_webhook_for_display(all_webhooks[0])
-            st.session_state.selected_webhook_index = 0
+        selected_webhook = all_webhooks[webhook_index]
+        webhook_data = format_webhook_for_display(selected_webhook)
+        
+        # Show which request is being displayed
+        if total_webhooks > 1:
+            st.info(f"📊 Displaying webhook #{st.session_state.selected_row_index + 1} of {total_webhooks}")
     
     else:
         # Fallback to demo data
