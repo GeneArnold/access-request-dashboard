@@ -1,8 +1,6 @@
 """
-Simple Atlan Webhook Data Demo
-
-This demonstrates what data you receive from Atlan webhooks.
-Shows REAL webhook data when available, falls back to demo data.
+Atlan Webhook Stories App - NEW VERSION
+Interactive demonstration of webhook data with playground features
 """
 
 import streamlit as st
@@ -207,7 +205,7 @@ def create_webhooks_table(webhooks: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(table_data)
 
 def main():
-    st.title("📡 Atlan Webhook Data")
+    st.title("📡 Atlan Webhook Data - NEW STORIES APP")
     
     # Fetch real webhook data
     webhook_result = fetch_webhook_data()

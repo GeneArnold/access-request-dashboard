@@ -19,8 +19,8 @@ services:
     name: access-request-dashboard
     env: python
     rootDir: ui
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run stories_app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    buildCommand: pip install -r requirements.txt && echo "Building Stories App"
+    startCommand: streamlit run stories_app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
     envVars:
       - key: PORT
         value: "10000" 
