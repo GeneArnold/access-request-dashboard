@@ -55,7 +55,8 @@ def fetch_webhook_data() -> Dict[str, Any]:
         try:
             response = requests.get(f"{api_url}/webhooks", timeout=5)
             if response.status_code == 200:
-                webhooks = response.json()
+                data = response.json()
+                webhooks = data.get("webhooks", [])  # Extract webhooks array from response
                 if webhooks and len(webhooks) > 0:
                     return {
                         "webhooks": webhooks,
@@ -176,11 +177,13 @@ def extract_form_purpose(forms: List[Dict[str, Any]]) -> str:
 def create_webhooks_table(webhooks: List[Dict[str, Any]]) -> pd.DataFrame:
     """Create a pandas DataFrame for the webhooks table"""
     
+    # Create table data
     table_data = []
+    
     for i, webhook in enumerate(webhooks):
         formatted = format_webhook_for_display(webhook)
         
-        # Extract time for sorting (most recent first)
+        # Extract time for display
         timestamp = formatted.get('timestamp', '')
         if timestamp:
             try:
@@ -192,22 +195,16 @@ def create_webhooks_table(webhooks: List[Dict[str, Any]]) -> pd.DataFrame:
             time_display = "Unknown"
         
         table_data.append({
-            "Index": i,
+            "#": i + 1,
             "Timestamp": time_display,
             "Requestor": formatted.get('requestor', 'Unknown'),
             "Asset Name": formatted['asset_details'].get('name', 'Unknown'),
             "Asset Type": formatted['asset_details'].get('type_name', 'Unknown'),
             "Connector": formatted['asset_details'].get('connector_name', 'unknown'),
-            "Purpose": formatted['form_responses'].get('purpose', 'No purpose specified')[:50] + "..." if len(formatted['form_responses'].get('purpose', '')) > 50 else formatted['form_responses'].get('purpose', 'No purpose specified')
+            "Purpose": formatted['form_responses'].get('purpose', 'No purpose specified')[:50] + ("..." if len(formatted['form_responses'].get('purpose', '')) > 50 else "")
         })
     
-    # Sort by timestamp descending (most recent first)
-    df = pd.DataFrame(table_data)
-    if not df.empty:
-        # Sort by index descending to show most recent webhooks first
-        df = df.sort_values('Index', ascending=False).reset_index(drop=True)
-    
-    return df
+    return pd.DataFrame(table_data)
 
 def main():
     st.title("📡 Atlan Webhook Data")
@@ -240,67 +237,35 @@ def main():
         # Create table
         df = create_webhooks_table(all_webhooks)
         
-        # Initialize session state for selected row - use simple list index
-        if 'selected_row_index' not in st.session_state:
-            st.session_state.selected_row_index = 0  # Default to first row
+        # Display the table
+        st.dataframe(df, use_container_width=True, hide_index=True)
         
-        # Ensure selected index is within bounds of the dataframe
-        if st.session_state.selected_row_index >= len(df):
-            st.session_state.selected_row_index = 0
+        # Webhook selector (using the same pattern as the working dashboard)
+        webhook_options = []
+        for idx, webhook in enumerate(all_webhooks):
+            formatted = format_webhook_for_display(webhook)
+            # Create readable option string
+            option = f"#{idx + 1}: {formatted['asset_details'].get('name', 'Unknown')} - {formatted.get('requestor', 'Unknown')}"
+            webhook_options.append((option, idx, webhook))
         
-        # Display the table with click functionality
-        st.markdown("*Click on any row to view detailed webhook data below*")
-        
-        # Create clickable table using columns
-        header_cols = st.columns([1, 2, 2, 3, 1.5, 1.5, 4])
-        header_labels = ["#", "Timestamp", "Requestor", "Asset Name", "Asset Type", "Connector", "Purpose"]
-        
-        for i, (col, label) in enumerate(zip(header_cols, header_labels)):
-            col.markdown(f"**{label}**")
-        
-        # Add visual separator
-        st.markdown("---")
-        
-        # Display each row as clickable buttons
-        for idx, row in df.iterrows():
-            row_cols = st.columns([1, 2, 2, 3, 1.5, 1.5, 4])
+        if webhook_options:
+            # Dropdown to select webhook
+            selected_option = st.selectbox(
+                "Select a webhook to view details:",
+                options=webhook_options,
+                format_func=lambda x: x[0],  # Display the readable string
+                help="Choose a specific webhook to see detailed information"
+            )
             
-            # Use dataframe row index for selection (much simpler)
-            is_selected = st.session_state.selected_row_index == idx
-            
-            # Style for selected row
-            button_type = "primary" if is_selected else "secondary"
-            
-            with row_cols[0]:
-                if st.button(f"{idx + 1}", key=f"select_row_{idx}", type=button_type):
-                    st.session_state.selected_row_index = idx
-                    st.rerun()
-            
-            # Display row data
-            for i, col_name in enumerate(["Timestamp", "Requestor", "Asset Name", "Asset Type", "Connector", "Purpose"]):
-                with row_cols[i + 1]:
-                    if is_selected:
-                        st.markdown(f"**{row[col_name]}**")
-                    else:
-                        st.markdown(f"{row[col_name]}")
-        
-        st.markdown("---")
-        
-        # Get selected webhook data - use the webhook Index from the selected row
-        selected_row = df.iloc[st.session_state.selected_row_index]
-        webhook_index = selected_row['Index']
-        
-        # Ensure webhook_index is within bounds
-        if webhook_index >= len(all_webhooks):
-            webhook_index = 0
-            
-        selected_webhook = all_webhooks[webhook_index]
-        webhook_data = format_webhook_for_display(selected_webhook)
-        
-        # Show which request is being displayed
-        if total_webhooks > 1:
-            st.info(f"📊 Displaying webhook #{st.session_state.selected_row_index + 1} of {total_webhooks}")
-    
+            if selected_option:
+                selected_webhook = selected_option[2]  # Get the actual webhook data
+                webhook_data = format_webhook_for_display(selected_webhook)
+            else:
+                # Default to first webhook if none selected
+                webhook_data = format_webhook_for_display(all_webhooks[0])
+        else:
+            # No webhooks available, use demo data
+            webhook_data = format_webhook_for_display(MOCK_WEBHOOK_DATA)
     else:
         # Fallback to demo data
         webhook_data = format_webhook_for_display(MOCK_WEBHOOK_DATA)
@@ -312,25 +277,15 @@ def main():
     asset = webhook_data['asset_details']
     
     # Create organized sections
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.code(f"""
+    st.code(f"""
 Asset Name: {asset['name']}
-Type: {asset['type_name']}
-Database: {asset['database_name']}
-Schema: {asset['schema_name']}
+Asset Type: {asset['type_name']}
 Connector: {asset['connector_name']}
-Qualified Name: {asset['qualified_name']}
-        """)
-    
-    with col2:
-        if asset.get('url') and asset['url'] != "#":
-            st.markdown(f"[🔗 View in Atlan]({asset['url']})")
-            st.markdown("*Direct link to asset in Atlan catalog*")
-        else:
-            st.markdown("🔗 Atlan URL")
-            st.markdown("*Available in real webhook data*")
+Database: {asset.get('database_name', 'N/A')}
+Schema: {asset.get('schema_name', 'N/A')}
+Qualified Name: {asset.get('qualified_name', 'N/A')}
+URL: {asset.get('url', 'N/A')}
+    """)
     
     st.markdown("### 👤 Request Information")
     st.code(f"""
@@ -354,19 +309,9 @@ Business Justification: {form['business_justification']}
         if approval:
             st.markdown("### ✅ Approval Details")
             st.code(f"""
-Auto-approved: {approval.get('is_auto_approved', 'Unknown')}
-Approvers: {len(approval.get('approvers', []))} person(s)
+Auto Approved: {approval.get('is_auto_approved', False)}
+Approvers: {', '.join([a.get('name', 'Unknown') for a in approval.get('approvers', [])])}
             """)
-            
-            # Show approver details
-            for i, approver in enumerate(approval.get('approvers', [])):
-                st.markdown(f"**Approver {i+1}:**")
-                st.code(f"""
-Name: {approver.get('name', 'Unknown')}
-Email: {approver.get('email', 'Unknown')}  
-Comment: {approver.get('comment', 'No comment')}
-Approved at: {approver.get('approved_at', 'Unknown')}
-                """)
     
     st.markdown("### 📄 Complete JSON Payload")
     if data_source == "real_webhook" and "raw_webhook" in webhook_data:
