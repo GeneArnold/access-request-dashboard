@@ -1,0 +1,26 @@
+services:
+  # FastAPI backend service
+  - type: web
+    name: access-request-api
+    env: python
+    rootDir: api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: WEBHOOK_SECRET
+        value: f3a225c-f1db-430d-8a73-818a9133df92
+      - key: REQUIRE_SIGNATURE
+        value: "True"
+      - key: PORT
+        value: "8080"
+
+  # Streamlit frontend service  
+  - type: web
+    name: access-request-dashboard
+    env: python
+    rootDir: ui
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run stories_app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    envVars:
+      - key: PORT
+        value: "10000" 
