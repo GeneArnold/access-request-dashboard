@@ -106,8 +106,57 @@ def format_webhook_for_display(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "raw_webhook": webhook_data
         }
     
-    # Fallback for other formats
-    return webhook_data
+    # Handle demo/mock data or other formats
+    if isinstance(webhook_data, dict):
+        # Ensure we always return a proper structure
+        return {
+            "id": webhook_data.get("id", "Unknown"),
+            "source": webhook_data.get("source", "unknown"),
+            "requestor": webhook_data.get("requestor", "Unknown"),
+            "requestor_email": webhook_data.get("requestor_email", "unknown@company.com"),
+            "asset_details": webhook_data.get("asset_details", {
+                "name": "Unknown Asset",
+                "type_name": "Unknown",
+                "connector_name": "unknown",
+                "database_name": "",
+                "schema_name": "",
+                "qualified_name": "",
+                "url": "#"
+            }),
+            "form_responses": webhook_data.get("form_responses", {
+                "purpose": "No purpose specified",
+                "duration": "Unknown",
+                "business_justification": "No justification provided"
+            }),
+            "timestamp": webhook_data.get("timestamp", ""),
+            "approval_details": webhook_data.get("approval_details", {}),
+            "raw_webhook": webhook_data
+        }
+    
+    # Fallback for unexpected data types
+    return {
+        "id": "Unknown",
+        "source": "unknown", 
+        "requestor": "Unknown",
+        "requestor_email": "unknown@company.com",
+        "asset_details": {
+            "name": "Data Error",
+            "type_name": "Unknown",
+            "connector_name": "unknown",
+            "database_name": "",
+            "schema_name": "",
+            "qualified_name": "",
+            "url": "#"
+        },
+        "form_responses": {
+            "purpose": "Error parsing webhook data",
+            "duration": "Unknown", 
+            "business_justification": "Data parsing error"
+        },
+        "timestamp": "",
+        "approval_details": {},
+        "raw_webhook": webhook_data
+    }
 
 def extract_form_purpose(forms: List[Dict[str, Any]]) -> str:
     """Extract purpose from Atlan form responses"""
