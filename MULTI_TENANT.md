@@ -1,187 +1,365 @@
-# Multi-Tenant Webhook Support
+# Multi-Tenant Webhook Support Guide
 
 ## Overview
 
-Your webhook receiver now supports **multiple secret keys** for multi-tenant deployments! This enables you to:
+This webhook system supports **multi-tenant architecture** allowing multiple Atlan instances, customers, or webhook sources to send authenticated requests to the same endpoint using different secret keys.
 
-- **Support multiple Atlan instances** (dev, staging, production)
-- **Handle different customers** with their own webhook secrets  
-- **Integrate multiple webhook sources** beyond just Atlan
-- **Scale to enterprise deployments** with separate secret keys per environment
+## Authentication Methods Supported
 
-## Configuration
+### 1. Atlan's secret-key Header Method (Primary)
+**Atlan uses direct secret key comparison** rather than HMAC signatures.
 
-### Environment Variable Format
+**How it works**:
+- Atlan sends webhook secret directly in `secret-key` header
+- System performs string comparison against configured secrets
+- No cryptographic signature calculation required
 
-Set multiple secrets using comma-separated values:
+**Request format**:
+```http
+POST /webhook HTTP/1.1
+Content-Type: application/json
+secret-key: 251dead7-9c7e-4e9a-8ce0-7508330ac926
 
-```bash
-# Single secret (existing behavior)
-WEBHOOK_SECRET="16c71bb3-ab9d-48bb-ad73-51f8eaa7e989"
-
-# Multiple secrets (new feature)
-WEBHOOK_SECRET="secret1,secret2,secret3"
-
-# Real example with multiple Atlan environments
-WEBHOOK_SECRET="16c71bb3-ab9d-48bb-ad73-51f8eaa7e989,f3a225c-f1db-430d-8a73-818a9133df92,a1b2c3d4-e5f6-789a-bcde-f0123456789a"
+{"type": "DATA_ACCESS_REQUEST", "payload": {...}}
 ```
 
-### Render Configuration
+### 2. HMAC Signature Method (Fallback)
+**Traditional webhook authentication** used by GitHub, Stripe, etc.
 
-In your Render dashboard:
-1. Go to **Environment Variables**  
-2. Update `WEBHOOK_SECRET` with comma-separated values
-3. **Save** (triggers automatic redeploy)
+**How it works**:
+- Sender calculates HMAC-SHA256 of request body using shared secret
+- Sends signature in header (X-Signature-256, X-Hub-Signature-256, etc.)
+- Receiver recalculates signature and compares
 
-## How It Works
+**Request format**:
+```http
+POST /webhook HTTP/1.1
+Content-Type: application/json
+X-Signature-256: sha256=abc123def456...
 
-### Signature Verification Process
-
-1. **Webhook received** with signature header
-2. **Try each secret** in the configured list
-3. **First matching secret** validates the webhook
-4. **Track which secret** was used (for logging/analytics)
-
-### Security Benefits
-
-- **No shared secrets** between different environments
-- **Individual secret rotation** without affecting other clients
-- **Source identification** - know which environment/client sent each webhook
-- **Audit trail** - track which secrets are being used
-
-## API Endpoints
-
-### Configuration Endpoint
-
-Check your current setup:
-
-```bash
-GET /config
+{"type": "DATA_ACCESS_REQUEST", "payload": {...}}
 ```
 
-Response shows multi-tenant status:
+## Multi-Tenant Configuration
+
+### Environment Variable Setup
+Configure multiple secrets using comma-separated values:
+
+```bash
+# Single tenant (Atlan instance)
+WEBHOOK_SECRET=251dead7-9c7e-4e9a-8ce0-7508330ac926
+
+# Multi-tenant (multiple Atlan instances or customers)
+WEBHOOK_SECRET=251dead7-9c7e-4e9a-8ce0-7508330ac926,6a04dab1-7d20-4b5a-bfb1-765ad4122b47,10e6e140-1c5f-4c3d-8b3f-9e7c4a5d6e8f
+
+# Production example (use your actual Atlan secrets)
+WEBHOOK_SECRET=prod-customer-a-secret,dev-instance-secret,staging-secret
+```
+
+### Configuration Examples
+
+#### Development Environment
+```bash
+# Local development with test secrets
+WEBHOOK_SECRET=dev-secret-123,test-secret-456
+REQUIRE_SIGNATURE=true
+```
+
+#### Production Environment
+```bash
+# Production with real customer secrets
+WEBHOOK_SECRET=customer-1-prod-secret,customer-2-prod-secret,internal-dev-secret
+REQUIRE_SIGNATURE=true
+```
+
+#### Demo Environment
+```bash
+# Demo with mixed secrets for demonstrations
+WEBHOOK_SECRET=demo-secret-1,demo-secret-2
+REQUIRE_SIGNATURE=true
+```
+
+## Authentication Flow
+
+### Priority Order
+The system tries authentication methods in this order:
+
+1. **secret-key header** (Atlan's method) - **PREFERRED**
+2. **HMAC signature headers** (traditional method) - **FALLBACK**
+
+### Validation Bypass
+**Validation challenges always bypass authentication** to allow webhook URL verification:
+- `{"atlan-webhook": "message"}`
+- `{"challenge": "value"}`
+- `{"verification_token": "value"}`
+- Empty JSON `{}`
+
+### Authentication Logic
+```python
+# Pseudocode of authentication flow
+if is_validation_challenge(request_body):
+    return echo_validation_challenge()
+
+if secret_key_header in request:
+    if secret_key_header in configured_secrets:
+        return process_webhook(verified_with=secret_key_header)
+    else:
+        return 401_invalid_secret_key()
+
+if signature_header in request:
+    for secret in configured_secrets:
+        if verify_hmac_signature(body, signature, secret):
+            return process_webhook(verified_with=secret)
+    return 401_invalid_signature()
+
+return 401_missing_authentication()
+```
+
+## Multi-Tenant Features
+
+### Secret Tracking
+Each webhook is tracked with which secret validated it:
 
 ```json
 {
-  "signature_verification_enabled": true,
-  "secrets_configured": 3,
-  "secret_previews": ["16c71bb3...", "f3a225c-...", "a1b2c3d4..."],
-  "webhook_file": "./data/webhooks.json",
-  "multi_tenant_support": true
+    "status": "success",
+    "message": "Webhook received and stored",
+    "type": "DATA_ACCESS_REQUEST",
+    "asset_name": "Customer_Table",
+    "signature_verified": true,
+    "verified_with_secret": "251dead7..."
 }
 ```
 
-### Webhook Response
+### Configuration Endpoint
+View multi-tenant status via `/config` endpoint:
 
-Successful webhooks now include which secret was used:
+```bash
+curl https://access-request-api.onrender.com/config
+```
 
+Response:
 ```json
 {
-  "status": "success",
-  "message": "Webhook received and stored", 
-  "type": "DATA_ACCESS_REQUEST",
-  "asset_name": "customer_table",
-  "signature_verified": true,
-  "verified_with_secret": "16c71bb3..."
+    "signature_verification_enabled": true,
+    "secrets_configured": 3,
+    "secret_previews": [
+        "251dead7...",
+        "6a04dab1...", 
+        "10e6e140..."
+    ],
+    "webhook_file": "./data/webhooks.json",
+    "multi_tenant_support": true
+}
+```
+
+### Audit Trail
+Each stored webhook includes audit information:
+```json
+{
+    "type": "DATA_ACCESS_REQUEST",
+    "payload": {...},
+    "received_at": "2025-06-30T19:42:06Z",
+    "signature_verified": true,
+    "verified_with_secret": "251dead7...",
+    "source_ip": "34.194.9.164"
 }
 ```
 
 ## Use Cases
 
-### 1. Multiple Atlan Environments
+### 1. Multiple Atlan Instances
+**Scenario**: Company has dev, staging, and prod Atlan instances
 
 ```bash
-# Development, Staging, Production
-WEBHOOK_SECRET="dev-secret-123,staging-secret-456,prod-secret-789"
+WEBHOOK_SECRET=dev-atlan-secret,staging-atlan-secret,prod-atlan-secret
 ```
+
+Each instance sends webhooks with its own secret, all processed by the same dashboard.
 
 ### 2. Multiple Customers
+**Scenario**: SaaS provider serving multiple customer Atlan instances
 
 ```bash
-# Different webhook secrets per customer  
-WEBHOOK_SECRET="customer-a-secret,customer-b-secret,customer-c-secret"
+WEBHOOK_SECRET=customer-a-secret,customer-b-secret,customer-c-secret
 ```
 
-### 3. Multiple Webhook Sources
+Each customer's webhooks are authenticated separately but displayed in unified dashboard.
+
+### 3. Mixed Webhook Sources
+**Scenario**: Supporting both Atlan and other webhook sources
 
 ```bash
-# Atlan + other data governance tools
-WEBHOOK_SECRET="atlan-secret,collibra-secret,apache-atlas-secret"
+WEBHOOK_SECRET=atlan-secret,github-secret,custom-app-secret
 ```
 
-## Stored Data
+Atlan uses secret-key header, others use HMAC signatures.
 
-Each webhook now includes tracking information:
+### 4. Development and Production
+**Scenario**: Same codebase handling both environments
 
-```json
+```bash
+# Development
+WEBHOOK_SECRET=dev-secret-1,test-secret-2
+
+# Production  
+WEBHOOK_SECRET=prod-customer-1,prod-customer-2,internal-dev
+```
+
+## Security Considerations
+
+### Secret Management
+- **Never commit secrets** to version control
+- **Use environment variables** for secret storage
+- **Rotate secrets periodically** for production use
+- **Use different secrets** per tenant/environment
+
+### Access Control
+- **Webhook ingestion**: Fully authenticated per secret
+- **Data viewing**: Currently open (demo-focused)
+- **Data management**: Open DELETE endpoint (demo convenience)
+
+### Audit and Monitoring
+- **Track which secret** validated each webhook
+- **Monitor for failed authentication** attempts
+- **Log source IPs** for security analysis
+- **Regular secret rotation** for production deployments
+
+## Testing Multi-Tenant Setup
+
+### Test Secret-Key Authentication
+```bash
+# Test with first tenant secret
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: 251dead7-9c7e-4e9a-8ce0-7508330ac926" \
+  -d '{"type": "DATA_ACCESS_REQUEST", "payload": {...}}'
+
+# Test with second tenant secret
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: 6a04dab1-7d20-4b5a-bfb1-765ad4122b47" \
+  -d '{"type": "DATA_ACCESS_REQUEST", "payload": {...}}'
+```
+
+### Test HMAC Signature Authentication
+```bash
+# Calculate HMAC signature
+echo -n '{"test":"payload"}' | openssl dgst -sha256 -hmac "your-secret-key"
+
+# Send with signature
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Signature-256: sha256=calculated-signature" \
+  -d '{"test":"payload"}'
+```
+
+### Test Invalid Authentication
+```bash
+# Should return 401 - Invalid secret key
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: invalid-secret" \
+  -d '{"test":"payload"}'
+
+# Should return 401 - Missing authentication
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"test":"payload"}'
+```
+
+## Deployment Considerations
+
+### Environment Variable Updates
+**Adding new tenant**:
+1. Get new webhook secret from tenant's Atlan instance
+2. Update `WEBHOOK_SECRET` in Render dashboard
+3. Add new secret to comma-separated list
+4. No code deployment required (environment variables persist)
+
+**Removing tenant**:
+1. Remove secret from `WEBHOOK_SECRET` environment variable
+2. Old webhooks from that tenant will be rejected
+3. Existing stored data remains until next service restart
+
+### Service Restart Behavior
+- **Environment variables**: Persist across restarts
+- **Webhook data**: Cleared on restart (ephemeral filesystem)
+- **Configuration**: Automatically reloaded from environment variables
+
+## Troubleshooting Multi-Tenant Issues
+
+### Common Problems
+
+#### 1. New Tenant Webhook Rejected
+**Symptoms**: 401 Unauthorized for new tenant
+**Solution**: 
+1. Verify new secret added to `WEBHOOK_SECRET`
+2. Check for typos in environment variable
+3. Confirm tenant is using correct secret
+4. Test with curl using exact secret
+
+#### 2. Tenant Using Wrong Authentication Method
+**Symptoms**: 401 errors despite correct secret
+**Solution**:
+1. Verify tenant sends `secret-key` header (Atlan method)
+2. If using HMAC, ensure proper signature calculation
+3. Use webhook.site to capture exact request format
+4. Compare against working examples
+
+#### 3. Secret Conflicts
+**Symptoms**: Wrong tenant attribution in audit logs
+**Solution**:
+1. Ensure all secrets are unique
+2. Check for duplicate secrets in configuration
+3. Review audit logs for verification patterns
+
+### Debugging Tools
+
+#### Configuration Check
+```bash
+# View current multi-tenant configuration
+curl https://access-request-api.onrender.com/config
+
+# Expected response shows all configured secrets
 {
-  "type": "DATA_ACCESS_REQUEST",
-  "payload": { ... },
-  "signature_verified": true,
-  "verified_with_secret": "16c71bb3...",
-  "received_at": "2024-12-30T12:00:00"
+    "secrets_configured": 3,
+    "secret_previews": ["251dead7...", "6a04dab1...", "10e6e140..."],
+    "multi_tenant_support": true
 }
 ```
 
-## Migration
-
-### From Single Secret
-
-**Before:**
+#### Authentication Testing
 ```bash
-WEBHOOK_SECRET="16c71bb3-ab9d-48bb-ad73-51f8eaa7e989"
+# Test each tenant secret individually
+for secret in secret1 secret2 secret3; do
+    echo "Testing secret: ${secret:0:8}..."
+    curl -X POST localhost:8080/webhook \
+        -H "Content-Type: application/json" \
+        -H "secret-key: $secret" \
+        -d '{"test": "multi-tenant"}' \
+        -w "Status: %{http_code}\n"
+done
 ```
 
-**After (backward compatible):**
-```bash  
-WEBHOOK_SECRET="16c71bb3-ab9d-48bb-ad73-51f8eaa7e989"
-# OR add more secrets:
-WEBHOOK_SECRET="16c71bb3-ab9d-48bb-ad73-51f8eaa7e989,new-secret-2,new-secret-3"
-```
+## Best Practices
 
-### Zero Downtime
+### Secret Management
+1. **Use descriptive naming** in environment variables when possible
+2. **Document which secret belongs to which tenant**
+3. **Regular rotation** for production environments
+4. **Separate secrets** for dev/staging/prod
 
-- **Existing webhooks continue working** during migration
-- **Add new secrets** without breaking existing integrations
-- **Remove old secrets** after confirming all sources use new ones
+### Monitoring
+1. **Track secret usage** via audit logs
+2. **Monitor for authentication failures** by tenant
+3. **Alert on unusual patterns** (new secrets, high failure rates)
+4. **Regular configuration reviews**
 
-## Dashboard Integration
+### Scaling
+1. **Consider database storage** for high-volume multi-tenant setups
+2. **Implement rate limiting** per tenant if needed
+3. **Add tenant-specific dashboards** for enterprise customers
+4. **Consider secret encryption** for very sensitive environments
 
-Your Streamlit dashboard automatically shows:
-- **Which secret verified** each webhook request
-- **Source identification** based on secret used
-- **Multi-tenant filtering** capabilities
-
-## Security Best Practices
-
-1. **Unique secrets per environment/client**
-2. **Regular secret rotation** (rotate individually)
-3. **Monitor secret usage** via dashboard analytics
-4. **Remove unused secrets** to reduce attack surface
-5. **Log verification failures** for security monitoring
-
-## Troubleshooting
-
-### Common Issues
-
-**New webhook failing validation:**
-- Check if new secret is added to `WEBHOOK_SECRET`  
-- Verify webhook source is using correct secret
-- Check `/config` endpoint to confirm secrets loaded
-
-**Multiple environments interfering:**
-- Ensure each environment uses unique secret
-- Check dashboard to see which secret validated each request
-- Verify no duplicate secrets across environments
-
-### Debug Information
-
-Check configuration:
-```bash
-curl https://access-request-api.onrender.com/config
-```
-
-This shows:
-- How many secrets are configured
-- Preview of each secret (first 8 characters)
-- Whether multi-tenant support is active 
+This multi-tenant architecture provides flexibility for various deployment scenarios while maintaining security and auditability for each tenant's webhook integration. 

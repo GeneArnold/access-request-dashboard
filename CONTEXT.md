@@ -388,3 +388,266 @@ This document contains everything needed to understand, develop, deploy, and mai
 ### Webhook Site for testing
 https://webhook.site/?utm_source=json-server-dev#!/view/ae1083a0-301f-4145-8064-b71d9638a8ad/bed8fd41-ca51-4cff-9a15-9523c42734d2/1
 
+# Data Access Request Webhook Dashboard - Complete Context
+
+## Project Overview
+
+This is a **webhook demonstration platform** built for showcasing Atlan data governance platform integrations. It receives webhook payloads from Atlan containing data access request information and displays them in a beautiful, real-time analytics dashboard.
+
+**Purpose**: Customer demonstrations of webhook functionality  
+**Stack**: FastAPI (webhook receiver) + Streamlit (dashboard)  
+**Hosting**: Render.com (free tier)  
+**Data Storage**: JSON files (ephemeral, demo-friendly)
+
+## Architecture
+
+### Dual-Service Architecture
+```
+Atlan → FastAPI Webhook Receiver → JSON Storage ← Streamlit Dashboard
+         (Port 8080)                                    (Port 8502)
+```
+
+**API Service**: https://access-request-api.onrender.com  
+**Dashboard**: https://access-request-dashboard.onrender.com
+
+### Key Components
+1. **FastAPI Webhook Receiver** (`api/main.py`) - Secure webhook endpoint with signature verification
+2. **Streamlit Dashboard** (`ui/streamlit_app.py`) - Real-time analytics and data visualization
+3. **JSON Storage** (`./data/webhooks.json`) - Simple file-based storage for demos
+
+## Critical Security Learnings
+
+### Atlan Authentication Method ⚠️ CRITICAL
+**Atlan does NOT use HMAC signatures** like most webhook systems. Instead:
+
+- **Uses**: `secret-key` header with direct key comparison
+- **Header**: `secret-key: <webhook-secret-guid>`
+- **Verification**: Direct string matching against configured secrets
+
+**This was discovered after extensive debugging** - do NOT attempt to implement HMAC signature verification for Atlan webhooks.
+
+### Multi-Tenant Support
+The system supports multiple webhook secrets via comma-separated environment variable:
+```bash
+WEBHOOK_SECRET="secret1,secret2,secret3"
+```
+
+Each webhook is tracked with which secret validated it for audit purposes.
+
+### Authentication Flow
+1. **Validation Challenges**: Bypass all security (allows Atlan to validate webhook URLs)
+2. **Real Webhooks**: Require either:
+   - `secret-key` header (Atlan's method) - **PREFERRED**
+   - HMAC signature headers (traditional method) - **FALLBACK**
+
+### Validation Challenge Formats
+Atlan sends different validation formats during webhook setup:
+- `{"atlan-webhook": "Hello, humans of data! It worked. Excited to see what you build!"}`
+- `{"challenge": "value"}`
+- `{"verification_token": "value"}`
+- `{"token": "value"}`
+- `{"key": "value"}`
+- Empty JSON `{}`
+
+**All validation challenges are echoed back** to complete Atlan's webhook registration.
+
+## Webhook Payload Structure
+
+### Real Data Access Request
+```json
+{
+    "type": "DATA_ACCESS_REQUEST",
+    "payload": {
+        "asset_details": {
+            "guid": "asset-guid",
+            "name": "Asset Name",
+            "qualified_name": "database/schema/table",
+            "url": "https://atlan-instance.com/assets/...",
+            "type_name": "Table|View|Column|etc",
+            "connector_name": "snowflake|bigquery|etc",
+            "database_name": "database_name",
+            "schema_name": "schema_name"
+        },
+        "request_timestamp": "2025-06-30T19:42:06Z",
+        "approval_details": {
+            "is_auto_approved": false,
+            "approvers": [
+                {
+                    "name": "approver.name",
+                    "comment": "approval comment",
+                    "approved_at": "2025-06-30T19:42:32Z",
+                    "email": "approver@company.com"
+                }
+            ]
+        },
+        "requestor": "requestor.name",
+        "requestor_email": "requestor@company.com", 
+        "requestor_comment": "reason for access",
+        "forms": [
+            {
+                "form_title": "Data Access Request",
+                "response": {
+                    "Dataset": "specific dataset requested"
+                }
+            }
+        ]
+    }
+}
+```
+
+## API Endpoints
+
+### Production Endpoints
+- `POST /webhook` - **Main webhook receiver** (secure with signature verification)
+- `GET /webhooks` - Retrieve all stored webhooks
+- `GET /webhooks/latest` - Get most recent webhook
+- `GET /config` - View current configuration (shows multi-tenant status)
+- `DELETE /webhooks` - Clear all stored data (**intentionally open for demos**)
+- `GET /docs` - Auto-generated Swagger documentation
+
+### Security Model
+- **Webhook Ingestion**: Fully secured with signature verification
+- **Data Management**: Intentionally open for demo convenience
+- **Multi-tenant**: Supports multiple Atlan instances/customers
+
+## Deployment and Infrastructure
+
+### Render.com Free Tier Behavior
+**Critical Understanding**: Render's free tier has **ephemeral filesystem storage**
+
+**What Happens**:
+1. Services spin down after ~15 minutes of inactivity
+2. When they spin back up, filesystem resets to deployment state
+3. **All webhook data is lost** (stored in JSON files)
+
+**This is PERFECT for demos**:
+- ✅ Fresh start for each demo session
+- ✅ No customer data mixing between demos  
+- ✅ No cleanup required between demonstrations
+- ✅ Simple reset mechanism (just wait for spin-down)
+
+### Environment Variables (Persistent)
+Environment variables **persist across deployments**:
+- `WEBHOOK_SECRET` - Comma-separated webhook secrets
+- `REQUIRE_SIGNATURE` - Enable/disable signature verification (default: true)
+- `PORT` - Service port (auto-set by Render)
+
+### GitHub Integration
+- **Repository**: https://github.com/GeneArnold/access-request-dashboard
+- **Auto-deployment**: Render automatically deploys on main branch pushes
+- **Deployment time**: ~3-5 minutes
+
+## Dashboard Features
+
+### Real-time Analytics
+- **Metrics**: Total requests, approved/pending counts, unique requestors
+- **Charts**: Asset types (pie chart), connectors (bar chart)
+- **Filtering**: By requestor, asset type, connector
+- **Details**: Full request inspection with raw JSON viewer
+
+### UI Components
+- Color-coded status indicators (green=approved, yellow=pending)
+- Responsive design for demos on various screen sizes
+- Auto-refresh capability
+- Interactive data exploration
+
+## Development and Testing
+
+### Local Development
+```bash
+# API (port 8080)
+cd api && python main.py
+
+# Dashboard (port 8502) 
+cd ui && python -m streamlit run streamlit_app.py
+```
+
+### Testing Webhook Security
+```bash
+# Test secret-key authentication (Atlan method)
+curl -X POST localhost:8080/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: your-webhook-secret" \
+  -d '{"type": "DATA_ACCESS_REQUEST", "payload": {...}}'
+
+# Test validation challenges
+curl -X POST localhost:8080/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"atlan-webhook": "validation message"}'
+```
+
+### Debugging Failed Webhooks
+1. **Check Render logs**: Dashboard → Service → Logs → Live tail
+2. **Use webhook.site**: Capture exact request format from Atlan
+3. **Verify secrets**: Ensure webhook secret matches configuration
+4. **Check headers**: Confirm `secret-key` header is present
+
+## Known Limitations and Design Decisions
+
+### Intentional Limitations (Demo-Focused)
+- **Ephemeral storage**: Data disappears on service restart (good for demos)
+- **Open DELETE endpoint**: Anyone can clear data (demo convenience)
+- **No user authentication**: Dashboard is publicly viewable (demo accessibility)
+- **File-based storage**: Simple JSON files instead of database (demo simplicity)
+
+### Technical Limitations
+- **Render free tier**: Services spin down after inactivity
+- **No persistence**: Data doesn't survive deployments
+- **Single webhook type**: Only handles DATA_ACCESS_REQUEST currently
+
+## Future Enhancement Options
+
+### Persistence Options (When Needed)
+1. **Database**: PostgreSQL, MySQL (Render offers free database tiers)
+2. **Cloud Storage**: AWS S3, Google Cloud Storage
+3. **External Services**: Firebase, Supabase
+4. **Render Persistent Disks**: Available on paid tiers
+
+### Security Enhancements (If Required)
+1. **API Key Protection**: For DELETE and management endpoints
+2. **Dashboard Authentication**: User login system
+3. **Rate Limiting**: Prevent webhook spam
+4. **IP Whitelisting**: Restrict webhook sources
+
+### Feature Enhancements
+1. **Multiple Webhook Types**: Support beyond DATA_ACCESS_REQUEST
+2. **Advanced Analytics**: Time-series analysis, trends
+3. **Export Functionality**: CSV, PDF report generation
+4. **Notification System**: Email/Slack alerts for new requests
+
+## Integration Testing History
+
+### Successful Integration Tests
+- ✅ Atlan webhook validation using `{"atlan-webhook": "message"}`
+- ✅ Multi-tenant authentication with multiple secrets
+- ✅ Real data access request processing and display
+- ✅ Dashboard real-time updates via API polling
+- ✅ Signature verification bypass for validation challenges
+- ✅ Both `secret-key` header and HMAC signature methods
+
+### Failed Approaches (Do Not Retry)
+- ❌ **HMAC signature verification for Atlan** - Atlan uses direct secret-key headers
+- ❌ **Test endpoints in production** - Removed for security cleanup
+- ❌ **Expecting consistent webhook secrets** - Atlan generates new secrets per URL change
+- ❌ **Database persistence on free tier** - Render free tier is ephemeral by design
+
+## Demo Script and Customer Presentation
+
+### Typical Demo Flow
+1. **Show clean dashboard** (no data)
+2. **Configure Atlan webhook** pointing to secure endpoint
+3. **Create data access request** in Atlan
+4. **Show real-time webhook** appearing in dashboard
+5. **Demonstrate analytics** and filtering capabilities
+6. **Clear data** for next demo (DELETE endpoint)
+
+### Key Selling Points
+- ✅ **Real-time integration** with Atlan
+- ✅ **Secure webhook processing** with signature verification
+- ✅ **Multi-tenant support** for enterprise customers
+- ✅ **Beautiful analytics dashboard** for business users
+- ✅ **Easy deployment** and management
+- ✅ **Flexible storage options** for production use
+
+This context document should enable any AI assistant to understand the complete system architecture, security model, deployment behavior, and lessons learned during development.
+

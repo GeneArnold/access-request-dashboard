@@ -1,218 +1,334 @@
-# Data Access Request Dashboard
+# 🚀 Data Access Request Webhook Dashboard
 
-A FastAPI + Streamlit application that receives webhook data and displays it in a beautiful dashboard.
+A **production-ready webhook demonstration platform** for showcasing Atlan data governance integrations. Receive, authenticate, and visualize data access requests in real-time with beautiful analytics.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+## 🎯 Overview
+
+This system demonstrates how to integrate with Atlan's webhook system to receive data access requests and display them in a gorgeous, real-time analytics dashboard. Perfect for customer demonstrations, proof-of-concepts, and showcasing webhook integration capabilities.
+
+### ✨ Key Features
+
+- 🔐 **Secure webhook authentication** with multiple methods (Atlan secret-key + HMAC signatures)
+- 🏢 **Multi-tenant support** for multiple Atlan instances or customers
+- 📊 **Real-time analytics dashboard** with interactive charts and filtering
+- 🚀 **Zero-config deployment** on Render.com (free tier)
+- 🎪 **Demo-friendly** with ephemeral storage and easy data reset
+- 📱 **Responsive design** for presentations on any device
+- 🔍 **Detailed request inspection** with raw JSON viewer
 
 ## 🏗️ Architecture
 
 ```
-Webhook Sender → FastAPI API (receives/stores) → Streamlit UI (displays data)
+┌─────────────┐    ┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐
+│    Atlan    │───▶│ FastAPI Webhook │───▶│ JSON Storage │◀───│ Streamlit       │
+│  Instance   │    │   Receiver      │    │  (Ephemeral) │    │   Dashboard     │
+└─────────────┘    └─────────────────┘    └──────────────┘    └─────────────────┘
+                         Port 8080                                   Port 8502
 ```
 
-- **FastAPI**: Receives webhooks at `/webhook` endpoint and stores to JSON file
-- **Streamlit**: Beautiful dashboard to visualize and filter webhook data
-- **Storage**: JSON file (easily replaceable with database later)
+### 🌐 Live Demo
 
-## 🚀 Local Development
+- **🎯 Dashboard**: https://access-request-dashboard.onrender.com
+- **🔌 API**: https://access-request-api.onrender.com
+- **📚 API Docs**: https://access-request-api.onrender.com/docs
 
-### Prerequisites
+## 🚀 Quick Start
 
-- Python 3.8+
-- pip or conda
+### 1. Deploy to Render (Recommended)
 
-### Setup
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
-1. **Clone and navigate to project**
-   ```bash
-   cd access_request_form
-   ```
+**Or manually:**
 
-2. **Set up virtual environment** (recommended)
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+1. **Fork this repository**
+2. **Connect to Render**: Create account at [render.com](https://render.com)
+3. **Deploy API service**:
+   - New Web Service → Connect GitHub
+   - Root Directory: `api`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `python main.py`
+4. **Deploy Dashboard**:
+   - New Web Service → Same repository
+   - Root Directory: `ui`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0`
+5. **Set environment variables** (see Configuration section)
 
-3. **Install API dependencies**
-   ```bash
-   cd api
-   pip install -r requirements.txt
-   cd ..
-   ```
+### 2. Local Development
 
-4. **Install UI dependencies**
-   ```bash
-   cd ui
-   pip install -r requirements.txt
-   cd ..
-   ```
-
-### Running Locally
-
-**Terminal 1 - Start FastAPI server:**
 ```bash
+# Clone the repository
+git clone https://github.com/GeneArnold/access-request-dashboard.git
+cd access-request-dashboard
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
+
+# Install dependencies
+pip install -r api/requirements.txt
+pip install -r ui/requirements.txt
+
+# Start API service (Terminal 1)
 cd api
 python main.py
-```
-- API will run at: http://localhost:8080
-- Auto-generated docs: http://localhost:8080/docs
+# API available at: http://localhost:8080
 
-**Terminal 2 - Start Streamlit dashboard:**
-```bash
+# Start Dashboard (Terminal 2)
 cd ui
 streamlit run streamlit_app.py
+# Dashboard available at: http://localhost:8502
 ```
-- Dashboard will run at: http://localhost:8501
 
-### Testing the Webhook
+## ⚙️ Configuration
 
-**Option 1: Using curl**
+### Environment Variables
+
+Set these in your deployment platform (Render, Heroku, etc.):
+
 ```bash
-curl -X POST "http://localhost:8080/webhook" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "type": "DATA_ACCESS_REQUEST",
-       "payload": {
-         "asset_details": {
-           "guid": "test-guid-123",
-           "name": "TEST_TABLE",
-           "qualified_name": "default/test/table",
-           "url": "https://example.com/asset",
-           "type_name": "Table",
-           "connector_name": "snowflake",
-           "database_name": "TEST_DB",
-           "schema_name": "TEST_SCHEMA"
-         },
-         "request_timestamp": "2024-01-15T10:30:00Z",
-         "approval_details": {
-           "is_auto_approved": false,
-           "approvers": [
-             {
-               "name": "john.doe",
-               "comment": "Approved for testing",
-               "approved_at": "2024-01-15T10:35:00Z",
-               "email": "john.doe@company.com"
-             }
-           ]
-         },
-         "requestor": "jane.smith",
-         "requestor_email": "jane.smith@company.com",
-         "requestor_comment": "Need access for analysis",
-         "forms": [
-           {
-             "form_title": "Access Request Form",
-             "response": {
-               "Purpose": "Data analysis for Q1 report"
-             }
-           }
-         ]
-       }
-     }'
+# Required: Webhook authentication secrets (comma-separated for multi-tenant)
+WEBHOOK_SECRET=your-atlan-webhook-secret-here
+
+# Optional: Enable/disable signature verification (default: true)
+REQUIRE_SIGNATURE=true
+
+# Auto-set by platform (don't set manually)
+PORT=auto-assigned-by-platform
 ```
 
-**Option 2: Using the FastAPI docs**
-1. Go to http://localhost:8080/docs
-2. Click on `/webhook` POST endpoint
-3. Click "Try it out"
-4. Paste the JSON payload and execute
+#### Multi-Tenant Example
+```bash
+# Support multiple Atlan instances or customers
+WEBHOOK_SECRET=prod-customer-a-secret,dev-instance-secret,staging-customer-b-secret
+```
 
-## 🚀 Deployment to Render
+### Atlan Integration
 
-### Step 1: Push to GitHub
+1. **Get webhook secret** from your Atlan instance
+2. **Configure webhook URL** in Atlan: `https://your-api-url.onrender.com/webhook`
+3. **Test integration** by creating a data access request in Atlan
+4. **View results** in your dashboard
 
-1. **Initialize git repo** (if not already done)
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit: FastAPI + Streamlit webhook receiver"
-   ```
+## 🔐 Security & Authentication
 
-2. **Create GitHub repository** and push
-   ```bash
-   git remote add origin https://github.com/yourusername/access_request_form.git
-   git branch -M main
-   git push -u origin main
-   ```
+### Atlan's Authentication Method
 
-### Step 2: Deploy FastAPI to Render
+**Important**: Atlan uses `secret-key` header authentication, not HMAC signatures:
 
-1. Go to [Render Dashboard](https://dashboard.render.com)
-2. Click "New" → "Web Service"
-3. Connect your GitHub repository
-4. Configure:
-   - **Name**: `access-request-api`
-   - **Environment**: `Python 3`
-   - **Build Command**: `cd api && pip install -r requirements.txt`
-   - **Start Command**: `cd api && python main.py`
-   - **Plan**: `Free`
+```http
+POST /webhook HTTP/1.1
+Content-Type: application/json
+secret-key: your-atlan-webhook-secret
 
-### Step 3: Deploy Streamlit to Render
+{"type": "DATA_ACCESS_REQUEST", "payload": {...}}
+```
 
-1. Click "New" → "Web Service" again
-2. Connect the same GitHub repository
-3. Configure:
-   - **Name**: `access-request-dashboard`
-   - **Environment**: `Python 3`
-   - **Build Command**: `cd ui && pip install -r requirements.txt`
-   - **Start Command**: `cd ui && streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0`
-   - **Plan**: `Free`
+### Fallback Authentication
 
-### Step 4: Update File Paths for Production
+Also supports traditional HMAC signature authentication for other webhook sources:
 
-After deployment, you'll need to update the file paths since Render might handle directories differently:
+```http
+POST /webhook HTTP/1.1
+Content-Type: application/json
+X-Signature-256: sha256=hmac-signature-here
 
-1. **Edit `api/main.py`**: Change `../data/webhooks.json` to `./data/webhooks.json`
-2. **Edit `ui/streamlit_app.py`**: Change `../data/webhooks.json` to `./data/webhooks.json`
-3. **Commit and push changes**
+{"type": "DATA_ACCESS_REQUEST", "payload": {...}}
+```
 
-## 📊 Features
+### Multi-Tenant Security
 
-### FastAPI Features
-- ✅ Webhook endpoint at `/webhook`
-- ✅ Data validation using Pydantic models
-- ✅ Auto-generated API documentation
-- ✅ Get all webhooks: `/webhooks`
-- ✅ Get latest webhook: `/webhooks/latest`
-- ✅ Clear all data: `DELETE /webhooks`
+- ✅ **Individual secret validation** per tenant/customer
+- ✅ **Audit trail** tracking which secret validated each webhook
+- ✅ **Source identification** for security monitoring
+- ✅ **Flexible secret rotation** without affecting other tenants
 
-### Streamlit Dashboard Features
-- ✅ Beautiful, responsive UI
-- ✅ Real-time metrics (Total, Approved, Pending requests)
-- ✅ Interactive charts (Asset types, Connectors)
-- ✅ Advanced filtering (Requestor, Asset Type, Connector)
-- ✅ Detailed request view with all metadata
-- ✅ Raw JSON data inspection
-- ✅ Recent requests table with status highlighting
+## 📊 Dashboard Features
 
-## 🔧 Configuration
+### Real-Time Analytics
+- **📈 Key Metrics**: Total requests, approval rates, unique requestors
+- **🥧 Asset Type Distribution**: Interactive pie charts
+- **📊 Connector Analysis**: Bar charts showing data source usage
+- **🔍 Advanced Filtering**: By requestor, asset type, connector
 
-### Environment Variables (Optional)
-- `WEBHOOK_FILE`: Path to JSON storage file (default: `../data/webhooks.json`)
-- `API_HOST`: FastAPI host (default: `0.0.0.0`)
-- `API_PORT`: FastAPI port (default: `8080`)
+### Request Management
+- **📋 Recent Requests Table**: Color-coded status indicators
+- **🔍 Detailed Inspector**: Full request details with JSON viewer
+- **⏱️ Timestamp Tracking**: Request and approval timing
+- **👥 Approval Workflow**: Approver information and comments
 
-### Production Considerations
-- Replace JSON file storage with a proper database (PostgreSQL, MongoDB)
-- Add authentication for the dashboard
-- Implement webhook signature verification
-- Add rate limiting
-- Set up monitoring and logging
+### Demo-Friendly Features
+- **🧹 Easy Reset**: One-click data clearing for fresh demos
+- **📱 Responsive Design**: Works perfectly on presentation screens
+- **🎨 Beautiful UI**: Professional appearance for customer demos
+- **⚡ Real-Time Updates**: Auto-refresh for live demonstrations
 
-## 🐛 Troubleshooting
+## 🛠️ API Endpoints
 
-**Issue**: Streamlit shows "No webhook data found"
-- **Solution**: Make sure FastAPI is running and has received webhooks
+### Production Endpoints
 
-**Issue**: API not receiving webhooks
-- **Solution**: Check firewall settings and ensure webhook sender can reach your endpoint
+| Method | Endpoint | Description | Authentication |
+|--------|----------|-------------|----------------|
+| `POST` | `/webhook` | **Main webhook receiver** | ✅ Required |
+| `GET` | `/webhooks` | List all webhooks | ❌ Open |
+| `GET` | `/webhooks/latest` | Get most recent webhook | ❌ Open |
+| `GET` | `/config` | View configuration | ❌ Open |
+| `DELETE` | `/webhooks` | Clear all data | ❌ Open (demo-friendly) |
+| `GET` | `/docs` | Interactive API documentation | ❌ Open |
 
-**Issue**: File path errors in production
-- **Solution**: Update file paths from `../data/` to `./data/` for Render deployment
+### Testing Endpoints
 
-## 🚀 Next Steps
+```bash
+# Test webhook authentication
+curl -X POST https://your-api-url.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: your-webhook-secret" \
+  -d '{"type": "DATA_ACCESS_REQUEST", "payload": {...}}'
 
-1. **Test locally**: Run both services and send test webhooks
-2. **Deploy to Render**: Follow deployment steps above
-3. **Configure your webhook sender**: Point to your Render API URL
-4. **Monitor**: Watch the dashboard populate with real data!
+# Test validation challenge (Atlan setup)
+curl -X POST https://your-api-url.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"atlan-webhook": "Hello, humans of data! It worked. Excited to see what you build!"}'
 
-Your webhook endpoint will be: `https://your-api-name.onrender.com/webhook` 
+# Check configuration
+curl https://your-api-url.onrender.com/config
+
+# Clear demo data
+curl -X DELETE https://your-api-url.onrender.com/webhooks
+```
+
+## 💾 Data Storage
+
+### Ephemeral Storage (Perfect for Demos!)
+
+- **📁 Storage Method**: JSON files on local filesystem
+- **♻️ Auto-Reset**: Data clears when services restart (every ~15 minutes on free tier)
+- **🎪 Demo Benefits**: Fresh start for each demonstration, no customer data mixing
+- **🔄 Manual Reset**: Use `DELETE /webhooks` endpoint anytime
+
+### Persistence Options (When Needed)
+
+For production use with persistent storage:
+
+1. **🗄️ Database Integration**: PostgreSQL, MySQL (Render offers free tiers)
+2. **☁️ Cloud Storage**: AWS S3, Google Cloud Storage
+3. **🔥 Firebase/Supabase**: Real-time database options
+4. **💾 Persistent Disks**: Available on Render paid tiers
+
+## 🎪 Demo Usage
+
+### Perfect for Customer Demonstrations
+
+1. **🧹 Start Clean**: Data automatically resets or use DELETE endpoint
+2. **🔗 Configure Atlan**: Point webhook to your secure endpoint
+3. **📝 Create Request**: Make data access request in Atlan
+4. **✨ Show Magic**: Real-time webhook appears in beautiful dashboard
+5. **📊 Explore Analytics**: Filter, drill down, show JSON details
+6. **🔄 Reset for Next Demo**: Automatic or manual data clearing
+
+### Presentation Tips
+
+- **📺 Full Screen**: Dashboard designed for projector/screen sharing
+- **⚡ Real-Time**: Create live requests during presentations
+- **🎨 Visual Appeal**: Professional charts and metrics for business audiences
+- **🔍 Technical Deep-Dive**: Raw JSON viewer for technical audiences
+
+## 🚨 Troubleshooting
+
+### Common Issues
+
+#### Webhook Authentication Failures
+```
+Error: 401 Unauthorized from Atlan
+```
+**Solutions:**
+1. Verify `secret-key` header is being sent by Atlan
+2. Check `WEBHOOK_SECRET` environment variable matches Atlan
+3. Use webhook.site to capture exact request format
+4. Confirm Atlan is using latest webhook secret
+
+#### Dashboard Shows No Data
+```
+"No webhook data found" message
+```
+**Solutions:**
+1. Check if API service is running and responding
+2. Verify webhook authentication is working (test with curl)
+3. Service may have restarted (data clears automatically)
+4. Check API logs for webhook receipt confirmation
+
+#### Service Spinning/Slow Response
+```
+502 Bad Gateway or long loading times
+```
+**Solutions:**
+1. **Render Free Tier**: Services sleep after 15 minutes, first request takes 30+ seconds
+2. **Just wait**: Subsequent requests will be fast
+3. **Keep-alive**: Use cron service to ping API every 14 minutes
+4. **Upgrade**: Paid tiers don't sleep
+
+### Debug Tools
+
+```bash
+# Check service health
+curl https://your-api-url.onrender.com/
+
+# View current configuration
+curl https://your-api-url.onrender.com/config
+
+# Test authentication
+curl -X POST https://your-api-url.onrender.com/webhook \
+  -H "secret-key: test-secret" \
+  -d '{"test": "data"}'
+
+# Check webhook data
+curl https://your-api-url.onrender.com/webhooks
+```
+
+## 📚 Documentation
+
+- **[🚀 Deployment Guide](DEPLOYMENT.md)** - Complete deployment instructions
+- **[🏢 Multi-Tenant Guide](MULTI_TENANT.md)** - Multi-customer setup
+- **[🔒 Security Guide](SECURITY.md)** - Security considerations
+- **[🧠 AI Context](CONTEXT.md)** - Complete system context for AI assistants
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+### Getting Help
+
+1. **📖 Check Documentation**: Start with relevant guide above
+2. **🐛 Common Issues**: Review troubleshooting section
+3. **🔍 Search Issues**: Check existing GitHub issues
+4. **💬 Create Issue**: Detailed bug reports or feature requests
+
+### What to Include in Issues
+
+- **Environment**: Local development vs deployed (Render/etc)
+- **Error Messages**: Full error text and HTTP status codes
+- **Request Format**: What you're sending to the webhook
+- **Expected vs Actual**: What should happen vs what does happen
+- **Steps to Reproduce**: Detailed reproduction steps
+
+## 🏷️ Tags
+
+`webhook` `atlan` `data-governance` `fastapi` `streamlit` `dashboard` `analytics` `render` `multi-tenant` `demo` `real-time`
+
+---
+
+**Built with ❤️ for the data governance community**
+
+**⭐ Star this repo if it helps with your Atlan integrations!** 

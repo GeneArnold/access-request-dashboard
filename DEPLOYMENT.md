@@ -1,221 +1,329 @@
-# 🚀 Deployment Guide - Render
+# Deployment Guide - Access Request Webhook Dashboard
 
-This guide walks you through deploying your webhook dashboard to Render for **free hosting**.
+## Overview
 
-## 📋 Prerequisites
+This guide covers the complete deployment process for the dual-service webhook dashboard on Render.com, including all lessons learned and troubleshooting steps.
 
-- ✅ GitHub account
-- ✅ Render account (free at render.com)
-- ✅ Your Atlan webhook secret key: `f3a225c-f1db-430d-8a73-818a9133df92`
+## Architecture
 
-## 🔧 Step 1: Push to GitHub
+### Services Structure
+- **API Service**: `access-request-api` (FastAPI webhook receiver)
+- **Dashboard Service**: `access-request-dashboard` (Streamlit frontend)
+- **Storage**: Ephemeral JSON files (demo-friendly)
 
-### 1.1 Create GitHub Repository
+### URLs
+- **Production API**: https://access-request-api.onrender.com
+- **Production Dashboard**: https://access-request-dashboard.onrender.com
+- **GitHub Repository**: https://github.com/GeneArnold/access-request-dashboard
 
-1. Go to [github.com](https://github.com) and create a new repository
-2. Name it: `access-request-dashboard` (or your preferred name)
-3. Set it to **Public** (required for Render free tier)
-4. **Don't** initialize with README (we already have files)
+## Prerequisites
 
-### 1.2 Push Your Code
+### Required Accounts
+1. **GitHub Account** - For code repository
+2. **Render Account** - For hosting (free tier sufficient)
+3. **Atlan Instance** - For webhook integration
+
+### Repository Setup
+```bash
+# Clone the repository
+git clone https://github.com/GeneArnold/access-request-dashboard.git
+cd access-request-dashboard
+
+# Verify structure
+ls -la
+# Should show: api/, ui/, README.md, DEPLOYMENT.md, etc.
+```
+
+## API Service Deployment
+
+### 1. Create Render Service
+1. Log into **Render Dashboard**: https://dashboard.render.com
+2. Click **"New +"** → **"Web Service"**
+3. Connect your **GitHub repository**
+4. Configure service:
+   - **Name**: `access-request-api`
+   - **Environment**: `Python 3`
+   - **Region**: `Ohio (US East)` (or closest to users)
+   - **Branch**: `main`
+   - **Root Directory**: `api`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python main.py`
+
+### 2. Environment Variables
+Set these in **Render Dashboard** → **Service** → **Environment**:
 
 ```bash
-# Add GitHub as remote (replace with YOUR username)
-git remote add origin https://github.com/YOUR_USERNAME/access-request-dashboard.git
+# Required - Webhook secrets (comma-separated for multi-tenant)
+WEBHOOK_SECRET=251dead7-9c7e-4e9a-8ce0-7508330ac926,6a04dab1-7d20-4b5a-bfb1-765ad4122b47
 
-# Push to GitHub
-git branch -M main
-git push -u origin main
+# Optional - Signature verification control
+REQUIRE_SIGNATURE=true
+
+# Auto-set by Render (don't set manually)
+PORT=<auto-assigned>
 ```
 
-## 🌐 Step 2: Deploy API to Render
-
-### 2.1 Create API Service
-
-1. Go to [Render Dashboard](https://dashboard.render.com)
-2. Click **"New"** → **"Web Service"**
-3. Connect your GitHub repository
-4. Configure:
-
-```
-Name: access-request-api
-Environment: Python 3
-Region: Choose closest to you
-Branch: main
-Root Directory: api
-Build Command: pip install -r requirements.txt
-Start Command: python main.py
+### 3. Deployment Configuration
+The API service uses `api/render.yaml`:
+```yaml
+services:
+  - type: web
+    name: access-request-api
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: PORT
+        generateValue: true
+      - key: WEBHOOK_SECRET
+        sync: false
 ```
 
-### 2.2 Environment Variables
+### 4. Common Deployment Issues
 
-Add these environment variables in Render:
-
+#### Build Failures
+**Problem**: Rust compilation errors with pydantic-core
 ```
-WEBHOOK_SECRET = f3a225c-f1db-430d-8a73-818a9133df92
-REQUIRE_SIGNATURE = True
-```
-
-### 2.3 Deploy
-
-- Click **"Create Web Service"**
-- Wait for deployment (5-10 minutes)
-- Your API will be available at: `https://access-request-api.onrender.com`
-
-## 📊 Step 3: Deploy Dashboard to Render
-
-### 3.1 Create Dashboard Service
-
-1. Click **"New"** → **"Web Service"** (again)
-2. Connect the same GitHub repository
-3. Configure:
-
-```
-Name: access-request-dashboard
-Environment: Python 3
-Region: Same as API
-Branch: main
-Root Directory: ui
-Build Command: pip install -r requirements.txt
-Start Command: streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+error: Microsoft Visual Studio C++ 14.0 is required
 ```
 
-### 3.2 Environment Variables
-
-Add this environment variable:
-
+**Solution**: Update `requirements.txt` to use newer versions with pre-compiled wheels:
+```txt
+fastapi==0.115.6
+uvicorn==0.32.1
+pydantic==2.10.4
+python-multipart==0.0.12
+python-dotenv==1.0.1
 ```
-API_URL = https://access-request-api.onrender.com
+
+#### Port Configuration
+**Problem**: Service not responding
+**Solution**: Ensure `main.py` uses Render's PORT environment variable:
+```python
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 ```
 
-(Use your actual API URL from Step 2)
+#### Environment Variable Issues
+**Problem**: 500 errors on webhook requests
+**Solution**: Verify `WEBHOOK_SECRET` is set in Render dashboard, not just locally
 
-### 3.3 Deploy
+## Dashboard Service Deployment
 
-- Click **"Create Web Service"**
-- Wait for deployment (5-10 minutes)
-- Your dashboard will be available at: `https://access-request-dashboard.onrender.com`
+### 1. Create Dashboard Service
+1. **Render Dashboard** → **"New +"** → **"Web Service"**
+2. **Same GitHub repository**
+3. Configure service:
+   - **Name**: `access-request-dashboard`
+   - **Environment**: `Python 3`
+   - **Region**: `Ohio (US East)` (same as API)
+   - **Branch**: `main`
+   - **Root Directory**: `ui`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0`
 
-## 🔗 Step 4: Connect to Atlan
+### 2. Dashboard Configuration
+The dashboard uses `ui/render.yaml`:
+```yaml
+services:
+  - type: web
+    name: access-request-dashboard
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0"
+```
 
-### 4.1 Update Atlan Webhook Configuration
+### 3. API Connection
+Ensure dashboard connects to production API:
+```python
+# In streamlit_app.py
+API_BASE_URL = "https://access-request-api.onrender.com"
+```
 
-1. In Atlan, go to your webhook settings
-2. Update the webhook URL to: `https://access-request-api.onrender.com/webhook`
-3. Ensure the secret key matches: `f3a225c-f1db-430d-8a73-818a9133df92`
+## Environment Variables Management
 
-### 4.2 Test Production Webhook
-
-1. Trigger a test webhook from Atlan
-2. Check your dashboard: `https://access-request-dashboard.onrender.com`
-3. Verify the data appears correctly
-
-## 🛠️ Step 5: Verify Deployment
-
-### 5.1 Test API Endpoints
+### Production Secrets
+**Critical**: Only set production webhook secrets that Atlan generates. Do NOT add test keys from webhook.site.
 
 ```bash
-# Check API health
+# Example configuration (use your actual Atlan secrets)
+WEBHOOK_SECRET=your-atlan-secret-1,your-atlan-secret-2
+```
+
+### Environment Variable Persistence
+- ✅ **Environment variables persist** across deployments
+- ❌ **File storage does NOT persist** (ephemeral filesystem)
+
+## Deployment Process
+
+### Automatic Deployment
+1. **Push to GitHub main branch**
+2. **Render automatically detects changes**
+3. **Both services rebuild and deploy** (~3-5 minutes)
+4. **Webhook data is wiped** (fresh start for demos)
+
+### Manual Deployment
+1. **Render Dashboard** → **Service** → **Manual Deploy**
+2. Select **latest commit** or specific commit
+3. **Deploy** button
+
+### Deployment Verification
+```bash
+# Test API health
 curl https://access-request-api.onrender.com/
+# Expected: {"message": "Webhook Receiver API is running!", "endpoints": [...]}
 
-# Check configuration
+# Test configuration
 curl https://access-request-api.onrender.com/config
+# Expected: {"signature_verification_enabled": true, "secrets_configured": N, ...}
 
-# Check stored webhooks
-curl https://access-request-api.onrender.com/webhooks
+# Test dashboard
+# Visit: https://access-request-dashboard.onrender.com
+# Expected: "No webhook data found" message
 ```
 
-### 5.2 Test Dashboard
+## Free Tier Behavior
 
-1. Open: `https://access-request-dashboard.onrender.com`
-2. Verify all features work:
-   - Metrics display
-   - Charts render
-   - Data table shows webhooks
-   - Filters work properly
+### Service Spin-Down
+**Render free tier services spin down after ~15 minutes of inactivity**
 
-## 🔄 Step 6: Update and Maintain
+**Symptoms**:
+- First request after inactivity takes 30+ seconds
+- 502 Bad Gateway during spin-up
+- Dashboard shows "spinning" or loading indefinitely
 
-### 6.1 Making Changes
+**Solutions**:
+1. **Wait it out** - First request will be slow, subsequent requests fast
+2. **Keep-alive service** - Use cron-job.org to ping API every 14 minutes
+3. **Upgrade to paid** - Paid instances don't sleep
 
-```bash
-# Make your changes locally
-git add .
-git commit -m "Update: description of changes"
-git push
+### Data Persistence
+**File storage is ephemeral on free tier**:
+- ✅ **Environment variables persist** across restarts
+- ❌ **JSON files are wiped** on each spin-up/deployment
+- ✅ **This is perfect for demos** (fresh data each time)
 
-# Render will auto-deploy from GitHub
-```
-
-### 6.2 Monitor Services
-
-- Both services auto-deploy when you push to GitHub
-- Check Render dashboard for deployment logs
-- Services sleep after 15 minutes of inactivity (free tier)
-- First request after sleep takes ~30 seconds to wake up
-
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-**"Build failed"**
-- Check the logs in Render dashboard
-- Verify requirements.txt files are correct
-- Ensure Python version compatibility
+#### 1. Webhook 401 Unauthorized
+**Symptoms**: Atlan webhook fails with 401 error in Render logs
+```
+INFO: 34.194.9.164:0 - "POST /webhook HTTP/1.1" 401 Unauthorized
+```
 
-**"Service unavailable"**
-- Services sleep on free tier
-- Wait 30 seconds for first request after inactivity
-- Check if service crashed in Render logs
+**Debug Steps**:
+1. **Use webhook.site** to capture exact Atlan request format
+2. **Check headers** - Verify `secret-key` header is present
+3. **Verify secrets** - Ensure Atlan secret matches `WEBHOOK_SECRET` config
+4. **Check logs** - Render Dashboard → Service → Logs → Live tail
 
-**"Webhook not appearing in dashboard"**
-- Verify API_URL environment variable is correct
-- Check API is receiving webhooks: `/webhooks` endpoint
-- Ensure services can communicate (both must be deployed)
+**Common Causes**:
+- Atlan generated new secret after URL change
+- Missing `secret-key` header (check Atlan configuration)
+- Typo in environment variable configuration
 
-**"Invalid signature" errors**
-- Verify WEBHOOK_SECRET matches Atlan exactly
-- Check Atlan webhook configuration
-- Test with `/webhook/test` endpoint first
+#### 2. Dashboard Shows No Data
+**Symptoms**: Dashboard loads but shows "No webhook data found"
 
-## 💰 Cost Information
+**Possible Causes**:
+1. **Service spin-down** - Data wiped when API restarted
+2. **No webhooks received** - API hasn't received any valid webhooks
+3. **API connection failure** - Dashboard can't reach API service
 
-### Render Free Tier Includes:
-- ✅ 750 hours/month (enough for 24/7 for both services)
-- ✅ Automatic HTTPS
-- ✅ Custom domains
-- ✅ Auto-deploy from GitHub
-- ✅ No credit card required
+**Debug Steps**:
+```bash
+# Check if API has data
+curl https://access-request-api.onrender.com/webhooks
 
-### Limitations:
-- ⚠️ Services sleep after 15 minutes of inactivity
-- ⚠️ 30-second cold start after sleeping
-- ⚠️ Public repositories only
-- ⚠️ Limited to 512MB RAM
+# Test webhook manually
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: your-webhook-secret" \
+  -d '{"type": "DATA_ACCESS_REQUEST", "payload": {...}}'
+```
 
-## 🎯 Production URLs
+#### 3. Build Failures
+**Symptoms**: Deployment fails during build phase
 
-After deployment, your URLs will be:
+**Common Issues**:
+- **Rust compilation errors**: Update to newer package versions
+- **Missing dependencies**: Check `requirements.txt` for all needed packages
+- **Python version**: Ensure compatibility with Render's Python 3.x
 
-- **API**: `https://access-request-api.onrender.com`
-- **Dashboard**: `https://access-request-dashboard.onrender.com` 
-- **API Docs**: `https://access-request-api.onrender.com/docs`
-- **Webhook Endpoint**: `https://access-request-api.onrender.com/webhook`
+#### 4. Cross-Service Communication
+**Symptoms**: Dashboard can't fetch data from API
 
-## 🔐 Security Notes
+**Check**:
+1. API service is running and responding
+2. Dashboard uses correct production API URL
+3. No CORS issues (FastAPI configured for cross-origin requests)
 
-- ✅ HTTPS automatically enabled
-- ✅ Webhook signature verification active
-- ✅ Environment variables securely stored
-- ✅ No secrets in repository
-- ✅ API endpoints protected
+### Debugging Tools
 
-Your production deployment is now **secure and ready for real webhook traffic**!
+#### Render Logs
+1. **Render Dashboard** → **Service** → **Logs**
+2. **Set to "Live tail"** for real-time monitoring
+3. **Filter by log level** if needed
 
-## 📞 Support
+#### Webhook Testing
+```bash
+# Test Atlan validation
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"atlan-webhook": "Hello, humans of data! It worked. Excited to see what you build!"}'
 
-If you need help:
-1. Check Render logs for detailed error messages
-2. Test locally first to isolate issues
-3. Verify environment variables are set correctly
-4. Use `/webhook/test` endpoint for debugging 
+# Test with secret-key header
+curl -X POST https://access-request-api.onrender.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "secret-key: your-webhook-secret" \
+  -d '{"test": "data"}'
+```
+
+#### webhook.site Integration
+1. **Go to webhook.site** and get temporary URL
+2. **Configure Atlan** to use webhook.site URL
+3. **Capture request format** (headers, body, method)
+4. **Test our endpoint** with exact same format
+
+## Production Checklist
+
+### Pre-Deployment
+- [ ] GitHub repository is up to date
+- [ ] Both services configured in Render
+- [ ] Environment variables set correctly
+- [ ] Latest package versions in requirements.txt
+
+### Post-Deployment
+- [ ] API service responds to health check
+- [ ] Dashboard loads and shows correct UI
+- [ ] Webhook validation works (test with curl)
+- [ ] Multi-tenant configuration visible in /config
+- [ ] Atlan webhook integration successful
+
+### Demo Preparation
+- [ ] Clear any existing webhook data
+- [ ] Test complete webhook flow
+- [ ] Verify dashboard analytics display correctly
+- [ ] Prepare sample data access request in Atlan
+
+## Monitoring and Maintenance
+
+### Regular Checks
+- **Weekly**: Verify both services are running
+- **Before demos**: Clear webhook data and test flow
+- **After Atlan updates**: Re-test webhook integration
+
+### Performance Monitoring
+- **Render Dashboard**: Service metrics and uptime
+- **API Response Times**: Use curl or monitoring tools
+- **Error Rates**: Check logs for 4xx/5xx errors
+
+### Updates and Maintenance
+1. **Code updates**: Push to main branch for auto-deployment
+2. **Dependency updates**: Update requirements.txt as needed
+3. **Environment variables**: Update in Render dashboard only
+
+This deployment guide captures all lessons learned and should prevent common pitfalls encountered during initial deployment and ongoing maintenance. 
