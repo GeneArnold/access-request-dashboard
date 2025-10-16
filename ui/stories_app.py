@@ -44,7 +44,7 @@ MOCK_WEBHOOK_DATA = {
     "timestamp": "2024-12-30T14:42:00Z"
 }
 
-@st.cache_data(ttl=10)  # Cache for 10 seconds to allow real-time updates
+@st.cache_data(ttl=5)  # Cache for 5 seconds to allow real-time updates
 def fetch_webhook_data() -> Dict[str, Any]:
     """Fetch real webhook data from API, fall back to mock data"""
     
