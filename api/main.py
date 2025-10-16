@@ -111,7 +111,7 @@ class WebhookPayload(BaseModel):
     requestor: str                     # Username of person requesting access
     requestor_email: str               # Email of requestor
     requestor_comment: str             # Requestor's justification/reason
-    forms: List[FormResponse]          # Additional form responses
+    forms: Optional[List[FormResponse]] = []  # Additional form responses (optional)
 
 class WebhookData(BaseModel):
     """
